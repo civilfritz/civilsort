@@ -1,6 +1,5 @@
 # Features to add
 
-- /stats
 - rate limits
 - allow / disallow new participants
 - "are you sure?" on delete

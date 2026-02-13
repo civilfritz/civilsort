@@ -362,3 +362,31 @@ h2 {
 .theme-toggle:hover {
     background: var(--bg-surface-alt);
 }
+
+/* Stats page */
+.stats-list {
+    margin-top: 30px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.stat-item:last-child {
+    border-bottom: none;
+}
+
+.stat-label {
+    font-weight: 500;
+    color: var(--text);
+}
+
+.stat-value {
+    font-size: 1.2em;
+    font-weight: 600;
+    color: var(--primary);
+}

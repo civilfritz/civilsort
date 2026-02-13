@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Statistics - Schulze Voting</title>
+    <script>
+    (function() {
+        var saved = localStorage.getItem('theme');
+        if (saved) {
+            document.documentElement.dataset.theme = saved;
+        } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.dataset.theme = 'dark';
+        }
+    })();
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+<div class="container ballot">
+    <h1>Aggregate Statistics</h1>
+    <p class="help-text">De-identified system-wide statistics</p>
+
+    <div class="stats-list">
+        <div class="stat-item">
+            <span class="stat-label">Total ballots:</span>
+            <span class="stat-value">{{.TotalBallots}}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Newest ballot:</span>
+            <span class="stat-value">{{.NewestBallot}}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Most entries on a single ballot:</span>
+            <span class="stat-value">{{.MaxEntries}}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Most participants on a single ballot:</span>
+            <span class="stat-value">{{.MaxParticipants}}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Average entries per ballot:</span>
+            <span class="stat-value">{{printf "%.1f" .AvgEntries}}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Average participants per ballot:</span>
+            <span class="stat-value">{{printf "%.1f" .AvgParticipants}}</span>
+        </div>
+    </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
