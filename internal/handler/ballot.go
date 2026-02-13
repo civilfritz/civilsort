@@ -306,10 +306,18 @@ type ResultEntry struct {
 	Name string `json:"name"`
 }
 
+// ItemEntry represents an item for client-side rendering.
+type ItemEntry struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	AddedBy string `json:"addedBy"`
+}
+
 // BroadcastMessage wraps the WebSocket payload with a message type.
 type BroadcastMessage struct {
 	Type    string        `json:"type"`
 	Results []ResultEntry `json:"results"`
+	Items   []ItemEntry   `json:"items,omitempty"`
 }
 
 // computeResults computes the Schulze ranking for a ballot.
@@ -396,6 +404,19 @@ func (h *Handler) broadcast(ctx context.Context, ballotID, messageType string) {
 	msg := BroadcastMessage{
 		Type:    messageType,
 		Results: results,
+	}
+
+	// Include item list for items_changed messages
+	if messageType == "items_changed" {
+		itemEntries := make([]ItemEntry, len(items))
+		for i, item := range items {
+			itemEntries[i] = ItemEntry{
+				ID:      item.ID,
+				Name:    item.Name,
+				AddedBy: item.AddedBy,
+			}
+		}
+		msg.Items = itemEntries
 	}
 
 	data, err := json.Marshal(msg)
