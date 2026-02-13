@@ -4,6 +4,7 @@ import (
 	"embed"
 	"flag"
 	"html/template"
+	"io/fs"
 	"log"
 	"net/http"
 
@@ -46,7 +47,13 @@ func main() {
 	// Set up routes
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticFS)))
+
+	// Serve static files from the static/ subdirectory in the embedded FS
+	staticSub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		log.Fatalf("Failed to create static sub-filesystem: %v", err)
+	}
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
 	// Start server
 	log.Printf("Listening on %s", *addr)
