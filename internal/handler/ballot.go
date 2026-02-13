@@ -1,0 +1,397 @@
+package handler
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"log"
+	"net/http"
+
+	"github.com/civilfritz/voting/internal/model"
+	"github.com/civilfritz/voting/internal/schulze"
+)
+
+// HandleHome shows the landing page with the create ballot form.
+func (h *Handler) HandleHome(w http.ResponseWriter, r *http.Request) {
+	if err := h.templates.ExecuteTemplate(w, "home.html", nil); err != nil {
+		log.Printf("Error rendering home: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// HandleCreateBallot creates a new ballot and redirects to it.
+func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	title := r.FormValue("title")
+	userID := UserID(r.Context())
+	ballotID := generateBallotID()
+
+	_, err := h.db.ExecContext(r.Context(),
+		"INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
+		ballotID, title, userID)
+	if err != nil {
+		log.Printf("Error creating ballot: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+}
+
+// HandleBallot shows the ballot page with items, ranking, and results.
+func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	userID := UserID(r.Context())
+
+	// Get ballot
+	var ballot model.Ballot
+	err := h.db.QueryRowContext(r.Context(),
+		"SELECT id, title, created_by, created_at FROM ballots WHERE id = ?",
+		ballotID).Scan(&ballot.ID, &ballot.Title, &ballot.CreatedBy, &ballot.CreatedAt)
+	if err == sql.ErrNoRows {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		log.Printf("Error fetching ballot: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get all items
+	items, err := h.getItems(r.Context(), ballotID)
+	if err != nil {
+		log.Printf("Error fetching items: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get current user's ranking
+	rankings, err := h.getRankings(r.Context(), ballotID, userID)
+	if err != nil {
+		log.Printf("Error fetching rankings: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Split items into ranked and unranked
+	rankedItems := make([]model.Item, 0)
+	unrankedItems := make([]model.Item, 0)
+
+	rankMap := make(map[int64]int)
+	for _, r := range rankings {
+		rankMap[r.ItemID] = r.Position
+	}
+
+	for _, item := range items {
+		if _, ranked := rankMap[item.ID]; ranked {
+			rankedItems = append(rankedItems, item)
+		} else {
+			unrankedItems = append(unrankedItems, item)
+		}
+	}
+
+	// Sort ranked items by position
+	for i := 0; i < len(rankedItems); i++ {
+		for j := i + 1; j < len(rankedItems); j++ {
+			if rankMap[rankedItems[i].ID] > rankMap[rankedItems[j].ID] {
+				rankedItems[i], rankedItems[j] = rankedItems[j], rankedItems[i]
+			}
+		}
+	}
+
+	// Compute results
+	results, err := h.computeResults(r.Context(), ballotID, items)
+	if err != nil {
+		log.Printf("Error computing results: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Ballot":        ballot,
+		"Items":         items,
+		"RankedItems":   rankedItems,
+		"UnrankedItems": unrankedItems,
+		"CurrentUser":   userID,
+		"Results":       results,
+	}
+
+	if err := h.templates.ExecuteTemplate(w, "ballot.html", data); err != nil {
+		log.Printf("Error rendering ballot: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+// HandleAddItem adds a new item to the ballot.
+func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	userID := UserID(r.Context())
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	itemName := r.FormValue("name")
+	if itemName == "" {
+		http.Error(w, "Item name cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	_, err := h.db.ExecContext(r.Context(),
+		"INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
+		ballotID, itemName, userID)
+	if err != nil {
+		log.Printf("Error adding item: %v", err)
+		http.Error(w, "Could not add item (duplicate name?)", http.StatusBadRequest)
+		return
+	}
+
+	// Broadcast updated results
+	h.broadcastResults(r.Context(), ballotID)
+
+	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+}
+
+// HandleDeleteItem deletes an item (only if the current user added it).
+func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	itemID := r.PathValue("itemID")
+	userID := UserID(r.Context())
+
+	// Check ownership
+	var addedBy string
+	err := h.db.QueryRowContext(r.Context(),
+		"SELECT added_by FROM items WHERE id = ? AND ballot_id = ?",
+		itemID, ballotID).Scan(&addedBy)
+	if err == sql.ErrNoRows {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		log.Printf("Error checking item ownership: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if addedBy != userID {
+		http.Error(w, "You can only delete items you added", http.StatusForbidden)
+		return
+	}
+
+	_, err = h.db.ExecContext(r.Context(), "DELETE FROM items WHERE id = ?", itemID)
+	if err != nil {
+		log.Printf("Error deleting item: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Broadcast updated results
+	h.broadcastResults(r.Context(), ballotID)
+
+	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+}
+
+// HandleSaveRankings saves the user's ranking (JSON API).
+func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	userID := UserID(r.Context())
+
+	// Parse JSON body
+	var req struct {
+		Order []int64 `json:"order"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Save rankings in a transaction
+	tx, err := h.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Delete existing rankings for this user on this ballot
+	_, err = tx.ExecContext(r.Context(),
+		"DELETE FROM rankings WHERE ballot_id = ? AND user_id = ?",
+		ballotID, userID)
+	if err != nil {
+		log.Printf("Error deleting old rankings: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Insert new rankings
+	stmt, err := tx.PrepareContext(r.Context(),
+		"INSERT INTO rankings (ballot_id, user_id, item_id, position) VALUES (?, ?, ?, ?)")
+	if err != nil {
+		log.Printf("Error preparing statement: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	for i, itemID := range req.Order {
+		_, err := stmt.ExecContext(r.Context(), ballotID, userID, itemID, i+1)
+		if err != nil {
+			log.Printf("Error inserting ranking: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Broadcast updated results
+	h.broadcastResults(r.Context(), ballotID)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// getItems retrieves all items for a ballot.
+func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, error) {
+	rows, err := h.db.QueryContext(ctx,
+		"SELECT id, ballot_id, name, added_by, created_at FROM items WHERE ballot_id = ? ORDER BY id",
+		ballotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []model.Item
+	for rows.Next() {
+		var item model.Item
+		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// getRankings retrieves all rankings for a user on a ballot.
+func (h *Handler) getRankings(ctx context.Context, ballotID, userID string) ([]model.Ranking, error) {
+	rows, err := h.db.QueryContext(ctx,
+		"SELECT ballot_id, user_id, item_id, position FROM rankings WHERE ballot_id = ? AND user_id = ?",
+		ballotID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rankings []model.Ranking
+	for rows.Next() {
+		var r model.Ranking
+		if err := rows.Scan(&r.BallotID, &r.UserID, &r.ItemID, &r.Position); err != nil {
+			return nil, err
+		}
+		rankings = append(rankings, r)
+	}
+	return rankings, rows.Err()
+}
+
+// ResultEntry represents one item in the final ranking.
+type ResultEntry struct {
+	Rank int    `json:"rank"`
+	Name string `json:"name"`
+}
+
+// computeResults computes the Schulze ranking for a ballot.
+func (h *Handler) computeResults(ctx context.Context, ballotID string, items []model.Item) ([]ResultEntry, error) {
+	if len(items) == 0 {
+		return []ResultEntry{}, nil
+	}
+
+	// Build item index mapping
+	idToIndex := make(map[int64]int)
+	indexToItem := make(map[int]model.Item)
+	for i, item := range items {
+		idToIndex[item.ID] = i
+		indexToItem[i] = item
+	}
+
+	// Get all rankings for this ballot (all users)
+	rows, err := h.db.QueryContext(ctx,
+		"SELECT user_id, item_id, position FROM rankings WHERE ballot_id = ?",
+		ballotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Build preferences by user
+	prefsByUser := make(map[string]schulze.Preference)
+	for rows.Next() {
+		var userID string
+		var itemID int64
+		var position int
+		if err := rows.Scan(&userID, &itemID, &position); err != nil {
+			return nil, err
+		}
+
+		if _, ok := prefsByUser[userID]; !ok {
+			prefsByUser[userID] = make(schulze.Preference)
+		}
+		if idx, ok := idToIndex[itemID]; ok {
+			prefsByUser[userID][idx] = position
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Convert to slice of preferences
+	prefs := make([]schulze.Preference, 0, len(prefsByUser))
+	for _, p := range prefsByUser {
+		prefs = append(prefs, p)
+	}
+
+	// Compute Schulze results
+	results := schulze.Compute(len(items), prefs)
+
+	// Convert to ResultEntry
+	entries := make([]ResultEntry, len(results))
+	for i, r := range results {
+		entries[i] = ResultEntry{
+			Rank: r.Rank,
+			Name: indexToItem[r.CandidateIndex].Name,
+		}
+	}
+
+	return entries, nil
+}
+
+// broadcastResults recomputes and broadcasts results to all WebSocket clients.
+func (h *Handler) broadcastResults(ctx context.Context, ballotID string) {
+	items, err := h.getItems(ctx, ballotID)
+	if err != nil {
+		log.Printf("Error getting items for broadcast: %v", err)
+		return
+	}
+
+	results, err := h.computeResults(ctx, ballotID, items)
+	if err != nil {
+		log.Printf("Error computing results for broadcast: %v", err)
+		return
+	}
+
+	data, err := json.Marshal(results)
+	if err != nil {
+		log.Printf("Error marshaling results for broadcast: %v", err)
+		return
+	}
+
+	h.hub.Broadcast(ballotID, data)
+}

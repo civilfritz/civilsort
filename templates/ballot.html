@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}} - Schulze Voting</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container ballot">
+    <div class="ballot-header">
+        <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
+        <div class="ballot-url">
+            <label>Share this URL:</label>
+            <input type="text" readonly id="ballot-url" onclick="this.select()">
+            <script>
+                document.getElementById('ballot-url').value = window.location.origin + '/ballot/{{.Ballot.ID}}';
+            </script>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="ballot-tab">Ballot</button>
+        <button class="tab-btn" data-tab="results-tab">Results</button>
+    </div>
+
+    <div id="ballot-tab" class="tab-panel active">
+        <div class="add-item-section">
+            <h2>Add Item</h2>
+            <form method="POST" action="/ballot/{{.Ballot.ID}}/items" class="add-item-form">
+                <input type="text" name="name" placeholder="Item name" required maxlength="200">
+                <button type="submit">Add</button>
+            </form>
+        </div>
+
+        <div class="items-section">
+            <h2>All Items</h2>
+            {{if .Items}}
+            <ul class="items-list">
+                {{range .Items}}
+                <li>
+                    <span class="item-name">{{.Name}}</span>
+                    <span class="item-meta">Added by {{if eq .AddedBy $.CurrentUser}}you{{else}}someone{{end}}</span>
+                    {{if eq .AddedBy $.CurrentUser}}
+                    <form method="POST" action="/ballot/{{$.Ballot.ID}}/items/{{.ID}}/delete" class="delete-form">
+                        <button type="submit" class="delete-btn">Delete</button>
+                    </form>
+                    {{end}}
+                </li>
+                {{end}}
+            </ul>
+            {{else}}
+            <p class="empty-message">No items yet. Add one above!</p>
+            {{end}}
+        </div>
+
+        <div class="ranking-section">
+            <h2>Your Ranking</h2>
+            <p class="help-text">Drag to reorder. Top = most preferred.</p>
+            <ul id="ranking-list" class="ranking-list">
+                {{range .RankedItems}}
+                <li data-item-id="{{.ID}}" class="ranked-item">
+                    <span class="drag-handle">☰</span>
+                    <span class="item-name">{{.Name}}</span>
+                </li>
+                {{end}}
+                {{if .UnrankedItems}}
+                <li class="section-divider">— Unranked —</li>
+                {{range .UnrankedItems}}
+                <li data-item-id="{{.ID}}" class="ranked-item unranked">
+                    <span class="drag-handle">☰</span>
+                    <span class="item-name">{{.Name}}</span>
+                </li>
+                {{end}}
+                {{end}}
+            </ul>
+        </div>
+    </div>
+
+    <div id="results-tab" class="tab-panel">
+        <h2>Results (Schulze Method)</h2>
+        <ul id="results-list" class="results-list">
+            {{if .Results}}
+                {{range .Results}}
+                <li>#{{.Rank}}: {{.Name}}</li>
+                {{end}}
+            {{else}}
+            <li>No rankings yet. Add items and rank them to see results!</li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="/static/app.js"></script>
+<script>
+    const ballotId = "{{.Ballot.ID}}";
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Create a Ballot - Schulze Voting</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container home">
+    <h1>Schulze Method Voting</h1>
+    <p>Create a ranked-choice ballot using the Schulze method.</p>
+
+    <form method="POST" action="/" class="create-ballot-form">
+        <label for="title">Ballot Title (optional)</label>
+        <input type="text" id="title" name="title" placeholder="e.g., Friday Lunch Vote" maxlength="200">
+
+        <button type="submit">Create Ballot</button>
+    </form>
+</div>
+</body>
+</html>
