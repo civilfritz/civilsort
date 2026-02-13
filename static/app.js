@@ -8,21 +8,27 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     });
 });
 
-// Drag-and-drop ranking
-const rankingList = document.getElementById('ranking-list');
-if (rankingList && typeof Sortable !== 'undefined') {
-    Sortable.create(rankingList, {
+// Drag-and-drop ranking with two zones
+const rankedList = document.getElementById('ranked-list');
+const unrankedList = document.getElementById('unranked-list');
+
+if (rankedList && unrankedList && typeof Sortable !== 'undefined') {
+    const options = {
+        group: 'ranking',
         animation: 150,
         ghostClass: 'sortable-ghost',
-        filter: '.section-divider',
         onEnd: function() {
             saveRanking();
         }
-    });
+    };
+
+    Sortable.create(rankedList, options);
+    Sortable.create(unrankedList, options);
 }
 
 function saveRanking() {
-    const items = rankingList.querySelectorAll('.ranked-item');
+    // Only save items from the ranked zone
+    const items = rankedList.querySelectorAll('.ranked-item');
     const order = Array.from(items).map(li => parseInt(li.dataset.itemId));
 
     fetch(`/ballot/${ballotId}/rankings`, {
@@ -41,10 +47,16 @@ function connectWebSocket() {
 
     ws.onmessage = function(event) {
         try {
-            const results = JSON.parse(event.data);
-            updateResultsList(results);
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'items_changed') {
+                // Items added or deleted - reload page to update items list and ranking list
+                window.location.reload();
+            } else if (msg.type === 'results') {
+                // Ranking changed - update results tab in-place
+                updateResultsList(msg.results);
+            }
         } catch (err) {
-            console.error('Error parsing results:', err);
+            console.error('Error parsing message:', err);
         }
     };
 

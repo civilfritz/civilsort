@@ -56,22 +56,25 @@
 
         <div class="ranking-section">
             <h2>Your Ranking</h2>
-            <p class="help-text">Drag to reorder. Top = most preferred.</p>
-            <ul id="ranking-list" class="ranking-list">
+            <p class="help-text">Drag items between zones. Ranked items appear in results; unranked items don't.</p>
+
+            <h3 class="zone-label">Ranked (top = most preferred)</h3>
+            <ul id="ranked-list" class="ranking-list ranked-zone">
                 {{range .RankedItems}}
                 <li data-item-id="{{.ID}}" class="ranked-item">
                     <span class="drag-handle">☰</span>
                     <span class="item-name">{{.Name}}</span>
                 </li>
                 {{end}}
-                {{if .UnrankedItems}}
-                <li class="section-divider">— Unranked —</li>
+            </ul>
+
+            <h3 class="zone-label">Unranked (no preference)</h3>
+            <ul id="unranked-list" class="ranking-list unranked-zone">
                 {{range .UnrankedItems}}
-                <li data-item-id="{{.ID}}" class="ranked-item unranked">
+                <li data-item-id="{{.ID}}" class="ranked-item">
                     <span class="drag-handle">☰</span>
                     <span class="item-name">{{.Name}}</span>
                 </li>
-                {{end}}
                 {{end}}
             </ul>
         </div>

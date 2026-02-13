@@ -42,7 +42,11 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		results, err := h.computeResults(r.Context(), ballotID, items)
 		if err == nil {
-			data, err := json.Marshal(results)
+			msg := BroadcastMessage{
+				Type:    "results",
+				Results: results,
+			}
+			data, err := json.Marshal(msg)
 			if err == nil {
 				client.Send(data)
 			}

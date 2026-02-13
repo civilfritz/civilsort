@@ -151,8 +151,8 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast updated results
-	h.broadcastResults(r.Context(), ballotID)
+	// Broadcast that items changed
+	h.broadcast(r.Context(), ballotID, "items_changed")
 
 	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
 }
@@ -189,8 +189,8 @@ func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast updated results
-	h.broadcastResults(r.Context(), ballotID)
+	// Broadcast that items changed
+	h.broadcast(r.Context(), ballotID, "items_changed")
 
 	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
 }
@@ -253,8 +253,8 @@ func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast updated results
-	h.broadcastResults(r.Context(), ballotID)
+	// Broadcast results update (ranking changed, no item changes)
+	h.broadcast(r.Context(), ballotID, "results")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -305,6 +305,12 @@ func (h *Handler) getRankings(ctx context.Context, ballotID, userID string) ([]m
 type ResultEntry struct {
 	Rank int    `json:"rank"`
 	Name string `json:"name"`
+}
+
+// BroadcastMessage wraps the WebSocket payload with a message type.
+type BroadcastMessage struct {
+	Type    string        `json:"type"`
+	Results []ResultEntry `json:"results"`
 }
 
 // computeResults computes the Schulze ranking for a ballot.
@@ -373,8 +379,9 @@ func (h *Handler) computeResults(ctx context.Context, ballotID string, items []m
 	return entries, nil
 }
 
-// broadcastResults recomputes and broadcasts results to all WebSocket clients.
-func (h *Handler) broadcastResults(ctx context.Context, ballotID string) {
+// broadcast recomputes and broadcasts a typed message to all WebSocket clients.
+// messageType should be "results" (ranking changed) or "items_changed" (items added/deleted).
+func (h *Handler) broadcast(ctx context.Context, ballotID, messageType string) {
 	items, err := h.getItems(ctx, ballotID)
 	if err != nil {
 		log.Printf("Error getting items for broadcast: %v", err)
@@ -387,9 +394,14 @@ func (h *Handler) broadcastResults(ctx context.Context, ballotID string) {
 		return
 	}
 
-	data, err := json.Marshal(results)
+	msg := BroadcastMessage{
+		Type:    messageType,
+		Results: results,
+	}
+
+	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("Error marshaling results for broadcast: %v", err)
+		log.Printf("Error marshaling message for broadcast: %v", err)
 		return
 	}
 
