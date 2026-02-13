@@ -144,6 +144,7 @@ h2 {
 .add-item-form {
     display: flex;
     gap: 10px;
+    margin-top: 20px;
 }
 
 .add-item-form input {
@@ -168,54 +169,42 @@ h2 {
     background: #218838;
 }
 
-/* Items list */
-.items-list {
-    list-style: none;
-}
-
-.items-list li {
-    display: flex;
-    align-items: center;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    margin-bottom: 8px;
-    background: #f9f9f9;
-}
-
 .item-name {
     flex: 1;
     font-weight: 500;
 }
 
-.item-meta {
-    font-size: 14px;
+/* Inline actions within ranked items */
+.item-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.item-owner-label {
+    font-size: 13px;
     color: #666;
-    margin-right: 10px;
+    font-style: italic;
 }
 
 .delete-form {
     display: inline;
+    margin: 0;
 }
 
 .delete-btn {
-    padding: 5px 12px;
+    padding: 4px 10px;
     background: #dc3545;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .delete-btn:hover {
     background: #c82333;
-}
-
-.empty-message {
-    color: #999;
-    text-align: center;
-    padding: 20px;
 }
 
 /* Ranking list */

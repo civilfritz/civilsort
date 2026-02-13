@@ -113,7 +113,6 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]interface{}{
 		"Ballot":        ballot,
-		"Items":         items,
 		"RankedItems":   rankedItems,
 		"UnrankedItems": unrankedItems,
 		"CurrentUser":   userID,
