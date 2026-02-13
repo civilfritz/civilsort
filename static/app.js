@@ -178,3 +178,22 @@ function updateResultsList(results) {
 if (typeof ballotId !== 'undefined') {
     connectWebSocket();
 }
+
+// Theme toggle
+const themeToggle = document.getElementById('theme-toggle');
+if (themeToggle) {
+    // Set initial icon
+    function updateThemeIcon() {
+        const currentTheme = document.documentElement.dataset.theme || 'light';
+        themeToggle.textContent = currentTheme === 'dark' ? '☀️' : '🌙';
+    }
+    updateThemeIcon();
+
+    themeToggle.addEventListener('click', () => {
+        const currentTheme = document.documentElement.dataset.theme || 'light';
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = newTheme;
+        localStorage.setItem('theme', newTheme);
+        updateThemeIcon();
+    });
+}
