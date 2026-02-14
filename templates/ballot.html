@@ -17,9 +17,10 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<main>
 <div class="container ballot">
     <div class="ballot-header">
-        <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}">
+        <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}" aria-label="Toggle ballot access - controls whether new participants can join">
             {{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}
         </button>
         <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
@@ -38,7 +39,8 @@
     </div>
 
     <div class="your-name-row">
-        <input type="text" id="display-name" placeholder="Your name (optional)" maxlength="50" value="{{.DisplayName}}" autocomplete="off">
+        <label for="display-name" class="sr-only">Your display name (visible to other participants)</label>
+        <input type="text" id="display-name" placeholder="Your name (optional - visible to others)" maxlength="50" value="{{.DisplayName}}" autocomplete="off">
     </div>
 
     <div class="participant-info">
@@ -57,19 +59,22 @@
         </ul>
     </div>
 
-    <div class="tabs">
-        <button class="tab-btn active" data-tab="ballot-tab">Ballot</button>
-        <button class="tab-btn" data-tab="results-tab">Results</button>
+    <div class="tabs" role="tablist">
+        <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="ballot-tab" data-tab="ballot-tab">Ballot</button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="results-tab" data-tab="results-tab">Results</button>
     </div>
 
-    <div id="ballot-tab" class="tab-panel active">
-        <p class="help-text">Drag items between zones. Ranked items appear in results; unranked items don't.</p>
+    <div id="ballot-tab" class="tab-panel active" role="tabpanel" aria-labelledby="ballot-tab">
+        <p class="help-text">Drag items between zones. Ranked items appear in results; unranked items don't. Share this page's URL to invite others!</p>
 
-        <h3 class="zone-label">Ranked (top = most preferred)</h3>
+        <h2 class="zone-label">Ranked (top = most preferred)</h2>
         <ul id="ranked-list" class="ranking-list ranked-zone">
+            {{if not .RankedItems}}
+            <li class="empty-state">Drag items here to rank them</li>
+            {{end}}
             {{range .RankedItems}}
             <li data-item-id="{{.ID}}" class="ranked-item">
-                <span class="drag-handle">☰</span>
+                <span class="drag-handle" aria-label="Drag to reorder">☰</span>
                 <span class="item-name">{{.Name}}</span>
                 <span class="item-meta">
                     {{if .AddedByName}}
@@ -85,11 +90,14 @@
             {{end}}
         </ul>
 
-        <h3 class="zone-label">Unranked (no preference)</h3>
+        <h2 class="zone-label">Unranked (no preference)</h2>
         <ul id="unranked-list" class="ranking-list unranked-zone">
+            {{if not .UnrankedItems}}
+            <li class="empty-state">Add items below - unranked items won't affect results</li>
+            {{end}}
             {{range .UnrankedItems}}
             <li data-item-id="{{.ID}}" class="ranked-item">
-                <span class="drag-handle">☰</span>
+                <span class="drag-handle" aria-label="Drag to reorder">☰</span>
                 <span class="item-name">{{.Name}}</span>
                 <span class="item-meta">
                     {{if .AddedByName}}
@@ -111,8 +119,9 @@
         </form>
     </div>
 
-    <div id="results-tab" class="tab-panel">
+    <div id="results-tab" class="tab-panel" role="tabpanel" aria-labelledby="results-tab">
         <h2>Results</h2>
+        <p class="help-text">Rankings computed using the <a href="/about?from={{.Ballot.ID}}" target="_blank" rel="noopener noreferrer">Schulze method</a> - a fair, cycle-resistant voting algorithm.</p>
         <ul id="results-list" class="results-list">
             {{if .Results}}
                 {{range .Results}}
@@ -124,8 +133,9 @@
         </ul>
     </div>
 </div>
+</main>
 
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js" integrity="sha384-4RKg3vWg8qy9g9rUqIKlLLPy/fEFd8qZfiNmh2H4xbLLtQAGhEzLPYAwKqVzMlQ0" crossorigin="anonymous"></script>
 <script>
     const ballotId = "{{.Ballot.ID}}";
     const currentUserId = "{{.CurrentUser}}";

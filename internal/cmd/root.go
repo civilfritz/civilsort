@@ -52,6 +52,16 @@ func NewRootCmd(tmpls embed.FS, static embed.FS) *cobra.Command {
 	return rootCmd
 }
 
+// securityHeadersMiddleware adds security headers to all responses
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func runServer(cmd *cobra.Command, args []string) error {
 	// Open database
 	database, err := db.Open(dbPath)
@@ -84,9 +94,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
+	// Apply middleware chain
+	handler := h.UserMiddleware(securityHeadersMiddleware(mux))
+
 	// Start server
 	log.Printf("Listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, h.UserMiddleware(mux)))
+	log.Fatal(http.ListenAndServe(addr, handler))
 	return nil
 }
 

@@ -2,12 +2,10 @@ package handler
 
 import (
 	"context"
-	"crypto/rand"
-	"database/sql"
-	"fmt"
 	"log"
-	"math/big"
 	"net/http"
+
+	"github.com/civilfritz/civilsort/internal/util"
 )
 
 const cookieName = "voter_id"
@@ -27,7 +25,7 @@ func (h *Handler) UserMiddleware(next http.Handler) http.Handler {
 		cookie, err := r.Cookie(cookieName)
 		if err != nil || cookie.Value == "" {
 			// Generate new user
-			userID = generateUUID()
+			userID = util.GenerateUUID()
 			fresh = true
 
 			// Insert into users table
@@ -47,7 +45,7 @@ func (h *Handler) UserMiddleware(next http.Handler) http.Handler {
 			err := h.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", userID).Scan(&exists)
 			if err != nil || !exists {
 				// Cookie exists but user doesn't - treat as new user
-				userID = generateUUID()
+				userID = util.GenerateUUID()
 				fresh = true
 				h.db.ExecContext(r.Context(), "INSERT OR IGNORE INTO users (id) VALUES (?)", userID)
 				setCookie(w, userID)
@@ -90,46 +88,12 @@ func setCookie(w http.ResponseWriter, userID string) {
 	})
 }
 
-// generateUUID generates a UUID v4.
-func generateUUID() string {
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
-	if err != nil {
-		panic(err)
-	}
-	b[6] = (b[6] & 0x0f) | 0x40 // version 4
-	b[8] = (b[8] & 0x3f) | 0x80 // variant 2
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
-}
-
 // generateBallotID generates a short random ID for URLs.
 func generateBallotID() string {
-	return generateShortID()
+	return util.GenerateShortID()
 }
 
 // generateParticipantID generates a short random ID for participant URLs.
 func generateParticipantID() string {
-	return generateShortID()
-}
-
-// generateShortID generates an 8-character alphanumeric ID.
-func generateShortID() string {
-	const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	b := make([]byte, 8)
-	for i := range b {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		if err != nil {
-			panic(err)
-		}
-		b[i] = charset[n.Int64()]
-	}
-	return string(b)
-}
-
-// getBallot retrieves a ballot by ID.
-func (h *Handler) getBallot(ctx context.Context, ballotID string) (*sql.Row, error) {
-	return h.db.QueryRowContext(ctx,
-		"SELECT id, title, created_by, created_at FROM ballots WHERE id = ?",
-		ballotID), nil
+	return util.GenerateShortID()
 }

@@ -56,6 +56,19 @@
     box-sizing: border-box;
 }
 
+/* Screen reader only content */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     line-height: 1.6;
@@ -253,6 +266,25 @@ h2 {
     background: var(--danger-hover);
 }
 
+/* Empty state */
+.empty-state {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    list-style: none;
+    pointer-events: none;
+}
+
+/* About page styles */
+.sub-list {
+    margin-top: 8px;
+}
+
+.footer-links {
+    margin-top: 2em;
+}
+
 /* Ranking list */
 .help-text {
     font-size: 14px;
@@ -331,7 +363,6 @@ h2 {
     color: var(--success-text);
 }
 
-/* Theme toggle */
 /* Hamburger menu */
 .hamburger-menu {
     padding: 8px 12px;
@@ -515,26 +546,6 @@ h2 {
     margin-top: 30px;
 }
 
-
-/* New ballot button in ballot controls */
-.new-ballot-btn {
-    padding: 6px 14px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text);
-    text-decoration: none;
-    display: inline-block;
-}
-
-.new-ballot-btn:hover {
-    background: var(--bg-surface-alt);
-    color: var(--text);
-    text-decoration: none;
-}
-
 /* Name input row */
 .your-name-row {
     margin: 8px 0 12px;
@@ -621,6 +632,44 @@ h2 {
     cursor: default;
 }
 
+/* Error toast notification */
+.error-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--danger);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    animation: slideIn 0.3s ease;
+}
+
+.error-toast.fade-out {
+    animation: fadeOut 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
 /* Item meta container */
 .item-meta {
     display: flex;
@@ -634,4 +683,87 @@ h2 {
     font-size: 13px;
     color: var(--text-muted);
     font-style: italic;
+}
+
+/* Focus styles for accessibility */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+.tab-btn:focus-visible,
+.hamburger-menu:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .slideDown,
+    .error-toast,
+    @keyframes slideIn,
+    @keyframes fadeOut {
+        animation: none;
+        transition: none;
+    }
+}
+
+/* Responsive breakpoints for narrow viewports */
+@media (max-width: 600px) {
+    /* Stack ballot header on narrow screens */
+    .ballot-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .ballot-header h1 {
+        flex: 1 1 100%;
+        order: 1;
+    }
+
+    .toggle-btn {
+        order: 2;
+    }
+
+    .menu-wrapper {
+        order: 3;
+    }
+
+    /* Stack stat items */
+    .stat-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    /* Prevent participant list overflow */
+    .participant-list {
+        left: auto;
+        right: 0;
+        transform: none;
+        min-width: 150px;
+        max-width: calc(100vw - 40px);
+    }
+
+    /* Stack add item form on very narrow screens */
+    .add-item-form {
+        flex-direction: column;
+    }
+
+    .add-item-form input {
+        width: 100%;
+    }
+
+    .add-item-form button {
+        width: 100%;
+    }
+
+    /* Improve readability on small screens */
+    .ranked-item {
+        font-size: 14px;
+    }
+
+    .item-meta {
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+    }
 }

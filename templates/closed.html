@@ -17,12 +17,25 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+<main>
 <div class="container home">
+    <div class="home-header">
+        <div class="menu-wrapper" id="menu-wrapper">
+            <button class="hamburger-menu" id="hamburger-menu" aria-label="Menu">☰</button>
+            <div class="menu-dropdown" id="menu-dropdown">
+                <nav class="menu-nav">
+                    <a href="/" class="menu-item">Home</a>
+                    <button class="menu-item theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">Light/Dark</button>
+                    <a href="/about" class="menu-item">About</a>
+                </nav>
+            </div>
+        </div>
+    </div>
     <h1>Ballot Closed</h1>
     <p>This ballot is currently closed to new participants.</p>
     <p><a href="/">Create your own ballot</a></p>
 </div>
+</main>
 <script src="/static/app.js"></script>
 </body>
 </html>

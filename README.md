@@ -47,6 +47,8 @@ A web application for ranked-choice voting with real-time results. Uses the Schu
 civilfritz-voting/
 ├── main.go                       # Entry point
 ├── internal/
+│   ├── cli/                      # CLI command implementations
+│   ├── cmd/                      # Cobra command wiring
 │   ├── db/                       # SQLite database layer
 │   ├── model/                    # Domain types (Ballot, Item, Ranking)
 │   ├── schulze/                  # Pure Schulze algorithm with tests
@@ -111,31 +113,50 @@ The [Schulze method](https://en.wikipedia.org/wiki/Schulze_method) is a Condorce
 3. Switch to the Results tab - you'll see the combined ranking update in real-time
 
 ### Unit Tests
-The Schulze algorithm has comprehensive tests:
+Run all tests across the project:
 ```bash
-go test ./internal/schulze/... -v
+go test ./... -v
 ```
 
-Test cases include:
-- Basic 3-candidate elections
-- Condorcet winners
-- Cycle resolution (A>B, B>C, C>A)
-- Incomplete rankings
-- Ties and edge cases
+Test coverage includes:
+- **Schulze algorithm**: Basic elections, Condorcet winners, cycle resolution (A>B, B>C, C>A), incomplete rankings, ties and edge cases
+- **HTTP handlers**: Ballot creation, item management, ranking saves, authorization checks
+- **Database layer**: Schema validation, WAL mode, foreign keys
+- **WebSocket hub**: Hub manager lifecycle and broadcast safety
+- **CLI commands**: List ballots, items, and participants with error handling
 
 ## Configuration
 
-Command-line flags:
+### Server
+
+Start the web server with command-line flags:
 ```bash
-./civilsort -addr :8080 -db civilsort.db
+./civilsort --addr :8080 --db civilsort.db
 ```
 
 | Flag | Default | Env Var | Description |
 |------|---------|---------|-------------|
-| `-addr` | `:8080` | `CIVILSORT_ADDR` | Listen address |
-| `-db` | `civilsort.db` | `CIVILSORT_DB` | SQLite database path |
+| `--addr` | `:8080` | `CIVILSORT_ADDR` | Listen address |
+| `--db` | `civilsort.db` | `CIVILSORT_DB` | SQLite database path |
 
 Environment variables are overridden by command-line flags.
+
+### CLI Commands
+
+List all ballots:
+```bash
+./civilsort list
+```
+
+List items for a specific ballot:
+```bash
+./civilsort list items <ballot-id>
+```
+
+List participants for a specific ballot:
+```bash
+./civilsort list participants <ballot-id>
+```
 
 ## Debian Package
 
@@ -203,8 +224,9 @@ Caddy automatically handles:
 
 ```sql
 CREATE TABLE users (
-    id         TEXT PRIMARY KEY,   -- UUID v4 from cookie
-    created_at DATETIME DEFAULT (datetime('now'))
+    id           TEXT PRIMARY KEY,   -- UUID v4 from cookie
+    display_name TEXT NOT NULL DEFAULT '',
+    created_at   DATETIME DEFAULT (datetime('now'))
 );
 
 CREATE TABLE ballots (
@@ -216,17 +238,22 @@ CREATE TABLE ballots (
 );
 
 CREATE TABLE ballot_participants (
-    ballot_id  TEXT REFERENCES ballots(id) ON DELETE CASCADE,
-    user_id    TEXT REFERENCES users(id),
-    created_at DATETIME DEFAULT (datetime('now')),
+    ballot_id      TEXT REFERENCES ballots(id) ON DELETE CASCADE,
+    user_id        TEXT REFERENCES users(id),
+    participant_id TEXT NOT NULL DEFAULT '',
+    display_name   TEXT NOT NULL DEFAULT '',
+    created_at     DATETIME DEFAULT (datetime('now')),
     PRIMARY KEY (ballot_id, user_id)
 );
+
+CREATE UNIQUE INDEX idx_bp_participant ON ballot_participants(ballot_id, participant_id);
 
 CREATE TABLE items (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     ballot_id  TEXT REFERENCES ballots(id) ON DELETE CASCADE,
     name       TEXT NOT NULL,
     added_by   TEXT REFERENCES users(id),
+    created_at DATETIME DEFAULT (datetime('now')),
     UNIQUE(ballot_id, name)
 );
 

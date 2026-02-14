@@ -10,6 +10,7 @@ import (
 
 	"github.com/civilfritz/civilsort/internal/db"
 	"github.com/civilfritz/civilsort/internal/hub"
+	"github.com/civilfritz/civilsort/internal/util"
 )
 
 // testHandler creates a fully wired Handler with in-memory database for testing
@@ -46,7 +47,7 @@ func authedRequest(t *testing.T, h *Handler, method, path string, body io.Reader
 	t.Helper()
 
 	// Create a user in the database
-	userID := generateUUID()
+	userID := util.GenerateUUID()
 	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", userID)
 	if err != nil {
 		t.Fatalf("Failed to create test user: %v", err)

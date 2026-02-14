@@ -1,3 +1,5 @@
+'use strict';
+
 // Hamburger menu
 const hamburgerMenu = document.getElementById('hamburger-menu');
 const menuDropdown = document.getElementById('menu-dropdown');
@@ -49,9 +51,13 @@ if (hamburgerMenu && menuDropdown) {
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.remove('active');
+            b.setAttribute('aria-selected', 'false');
+        });
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
         const tabId = btn.dataset.tab;
         document.getElementById(tabId).classList.add('active');
         // Save active tab to hash so it survives reload
@@ -65,9 +71,13 @@ if (location.hash) {
     const tabBtn = document.querySelector(`[data-tab="${tabId}"]`);
     const tabPanel = document.getElementById(tabId);
     if (tabBtn && tabPanel) {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.remove('active');
+            b.setAttribute('aria-selected', 'false');
+        });
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         tabBtn.classList.add('active');
+        tabBtn.setAttribute('aria-selected', 'true');
         tabPanel.classList.add('active');
     }
 }
@@ -114,12 +124,14 @@ if (participantToggle && participantList) {
         e.stopPropagation();
         const isVisible = participantList.style.display !== 'none';
         participantList.style.display = isVisible ? 'none' : 'block';
+        participantToggle.setAttribute('aria-expanded', isVisible ? 'false' : 'true');
     });
 
     // Close participant list when clicking elsewhere
     document.addEventListener('click', function(e) {
         if (!participantList.contains(e.target) && e.target !== participantToggle) {
             participantList.style.display = 'none';
+            participantToggle.setAttribute('aria-expanded', 'false');
         }
     });
 }
@@ -140,23 +152,38 @@ if (rankedList && unrankedList && typeof Sortable !== 'undefined') {
 
     Sortable.create(rankedList, options);
     Sortable.create(unrankedList, options);
+
+    // Initialize empty states
+    updateEmptyStates();
 }
 
+// Debounce helper
+let rankingSaveTimeout = null;
 function saveRanking() {
-    // Only save items from the ranked zone
-    const items = rankedList.querySelectorAll('.ranked-item');
-    const order = Array.from(items).map(li => parseInt(li.dataset.itemId));
+    // Debounce to avoid flooding server on rapid reorders
+    clearTimeout(rankingSaveTimeout);
+    rankingSaveTimeout = setTimeout(() => {
+        // Only save items from the ranked zone
+        const items = rankedList.querySelectorAll('.ranked-item');
+        const order = Array.from(items).map(li => parseInt(li.dataset.itemId));
 
-    fetch(`/ballot/${ballotId}/rankings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: order })
-    }).catch(err => {
-        console.error('Error saving ranking:', err);
-    });
+        // Update empty states after drag
+        updateEmptyStates();
+
+        fetch(`/ballot/${ballotId}/rankings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: order })
+        }).catch(err => {
+            console.error('Error saving ranking:', err);
+            showError('Failed to save ranking. Please try again.');
+        });
+    }, 300);
 }
 
-// WebSocket for live results
+// WebSocket for live results with exponential backoff
+let wsReconnectDelay = 1000; // Start with 1 second
+const maxReconnectDelay = 30000; // Max 30 seconds
 function connectWebSocket() {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${protocol}//${location.host}/ballot/${ballotId}/ws`);
@@ -191,9 +218,17 @@ function connectWebSocket() {
         }
     };
 
+    ws.onopen = function() {
+        console.log('WebSocket connected');
+        // Reset reconnect delay on successful connection
+        wsReconnectDelay = 1000;
+    };
+
     ws.onclose = function() {
-        console.log('WebSocket closed, reconnecting...');
-        setTimeout(connectWebSocket, 2000);
+        console.log(`WebSocket closed, reconnecting in ${wsReconnectDelay}ms...`);
+        setTimeout(connectWebSocket, wsReconnectDelay);
+        // Exponential backoff with max limit
+        wsReconnectDelay = Math.min(wsReconnectDelay * 2, maxReconnectDelay);
     };
 
     ws.onerror = function(err) {
@@ -291,9 +326,37 @@ function updateItems(msg) {
     // Update results
     updateResultsList(msg.results);
 
+    // Update empty states
+    updateEmptyStates();
+
     // If any ranked items were removed, save the current ranking
     if (rankedRemoved) {
         saveRanking();
+    }
+}
+
+function updateEmptyStates() {
+    const rankedItems = rankedList.querySelectorAll('.ranked-item');
+    const unrankedItems = unrankedList.querySelectorAll('.ranked-item');
+
+    // Remove existing empty states
+    rankedList.querySelectorAll('.empty-state').forEach(el => el.remove());
+    unrankedList.querySelectorAll('.empty-state').forEach(el => el.remove());
+
+    // Add empty state if no ranked items
+    if (rankedItems.length === 0) {
+        const emptyLi = document.createElement('li');
+        emptyLi.className = 'empty-state';
+        emptyLi.textContent = 'Drag items here to rank them';
+        rankedList.appendChild(emptyLi);
+    }
+
+    // Add empty state if no unranked items
+    if (unrankedItems.length === 0) {
+        const emptyLi = document.createElement('li');
+        emptyLi.className = 'empty-state';
+        emptyLi.textContent = 'Add items below - unranked items won\'t affect results';
+        unrankedList.appendChild(emptyLi);
     }
 }
 
@@ -394,8 +457,24 @@ if (toggleBtn) {
             }
         }).catch(err => {
             console.error('Error toggling ballot state:', err);
+            showError('Failed to toggle ballot state. Please try again.');
         });
     });
+}
+
+// Simple error notification
+function showError(message) {
+    // Create toast notification
+    const toast = document.createElement('div');
+    toast.className = 'error-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.add('fade-out');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 // Copy URL button
@@ -414,6 +493,7 @@ if (copyUrlBtn && typeof ballotId !== 'undefined') {
             }, 1500);
         }).catch(err => {
             console.error('Failed to copy URL:', err);
+            showError('Failed to copy URL. Please try again.');
         });
     });
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/civilfritz/civilsort/internal/util"
 	"net/http"
 	"testing"
 )
@@ -20,7 +21,7 @@ func TestHandleStats_WithData(t *testing.T) {
 	h := testHandler(t)
 
 	// Create some test data
-	userID := generateUUID()
+	userID := util.GenerateUUID()
 	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", userID)
 	if err != nil {
 		t.Fatalf("Failed to create user: %v", err)

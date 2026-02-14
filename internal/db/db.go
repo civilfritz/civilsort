@@ -1,10 +1,10 @@
 package db
 
 import (
-	cryptoRand "crypto/rand"
 	"database/sql"
-	"math/big"
 	"strings"
+
+	"github.com/civilfritz/civilsort/internal/util"
 	_ "modernc.org/sqlite"
 )
 
@@ -146,30 +146,11 @@ func backfillParticipantIDs(db *sql.DB) error {
 	defer stmt.Close()
 
 	for _, p := range participants {
-		participantID := generateShortID()
+		participantID := util.GenerateShortID()
 		if _, err := stmt.Exec(participantID, p.ballotID, p.userID); err != nil {
 			return err
 		}
 	}
 
 	return nil
-}
-
-// generateShortID generates an 8-character alphanumeric ID
-func generateShortID() string {
-	const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	b := make([]byte, 8)
-	for i := range b {
-		b[i] = charset[randomInt(len(charset))]
-	}
-	return string(b)
-}
-
-// randomInt returns a random int in [0, max)
-func randomInt(max int) int {
-	n, err := cryptoRand.Int(cryptoRand.Reader, big.NewInt(int64(max)))
-	if err != nil {
-		panic(err)
-	}
-	return int(n.Int64())
 }

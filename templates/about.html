@@ -17,19 +17,20 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<main>
 <div class="container ballot">
     <div class="ballot-header">
         <h1>About civilsort</h1>
-        <a href="javascript:history.back()" class="hamburger-menu" aria-label="Go back">←</a>
+        <a href="/" class="hamburger-menu" aria-label="Go back to home">←</a>
     </div>
     <p class="help-text">Sort it out together.</p>
 
-    <h2 >How It Works</h2>
-    <ol >
+    <h2>How It Works</h2>
+    <ol>
         <li><strong>Create a ballot</strong> with an optional title (e.g., "Friday Lunch Vote")</li>
         <li><strong>Share the URL</strong> with participants using the copy button (📋)</li>
         <li><strong>Control access</strong> with the Open/Closed toggle:
-            <ul style="margin-top: 8px;">
+            <ul class="sub-list">
                 <li><strong>Open</strong> — new visitors can join and vote</li>
                 <li><strong>Closed</strong> — only existing participants can access</li>
             </ul>
@@ -39,36 +40,37 @@
         <li><strong>View results</strong> in real-time on the Results tab</li>
     </ol>
 
-    <h2 >The Schulze Method</h2>
-    <p>civilsort uses the <a href="https://en.wikipedia.org/wiki/Schulze_method" target="_blank">Schulze method</a> (also called Beatpath) to compute rankings. It's a Condorcet completion method that:</p>
-    <ul >
+    <h2>The Schulze Method</h2>
+    <p>civilsort uses the <a href="https://en.wikipedia.org/wiki/Schulze_method" target="_blank" rel="noopener noreferrer">Schulze method</a> (also called Beatpath) to compute rankings. It's a Condorcet completion method that:</p>
+    <ul>
         <li><strong>Counts pairwise preferences</strong> — for every pair of items, it counts how many voters prefer one over the other</li>
         <li><strong>Finds the strongest paths</strong> — uses an algorithm similar to Floyd-Warshall to compute the strongest indirect preference between any two items</li>
         <li><strong>Handles cycles gracefully</strong> — if voters prefer A>B, B>C, and C>A (a "Condorcet paradox"), the Schulze method resolves it by finding the strongest paths</li>
         <li><strong>Elects Condorcet winners</strong> — if one item beats all others head-to-head, it always wins</li>
     </ul>
 
-    <h2 >Incomplete Rankings</h2>
+    <h2>Incomplete Rankings</h2>
     <p>You don't have to rank every item:</p>
-    <ul >
+    <ul>
         <li><strong>Ranked items</strong> are always preferred over unranked items</li>
         <li><strong>Unranked items</strong> are tied with each other (no preference)</li>
     </ul>
     <p>This lets you express "I care about these top 3, but I'm indifferent to the rest."</p>
 
-    <h2 >Features</h2>
-    <ul >
+    <h2>Features</h2>
+    <ul>
         <li><strong>No login required</strong> — users are identified by browser cookies</li>
         <li><strong>Real-time updates</strong> — results update instantly via WebSockets</li>
         <li><strong>Dark/light mode</strong> — toggle with the button in the top-right</li>
         <li><strong>Collaborative</strong> — any participant can add items; you can delete items you added</li>
     </ul>
 
-    <p class="help-text" style="margin-top: 2em;">
-        <a href="https://github.com/civilfritz/civilsort" target="_blank">View source on GitHub</a> ·
-        <a href="https://github.com/civilfritz/civilsort/issues" target="_blank">Report a bug</a>
+    <p class="help-text footer-links">
+        <a href="https://github.com/civilfritz/civilsort" target="_blank" rel="noopener noreferrer">View source on GitHub</a> ·
+        <a href="https://github.com/civilfritz/civilsort/issues" target="_blank" rel="noopener noreferrer">Report a bug</a>
     </p>
 </div>
+</main>
 <script src="/static/app.js"></script>
 </body>
 </html>

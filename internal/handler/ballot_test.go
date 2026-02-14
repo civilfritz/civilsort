@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/civilfritz/civilsort/internal/util"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -48,7 +49,7 @@ func TestHandleBallot_NewParticipant(t *testing.T) {
 	h := testHandler(t)
 
 	// Create creator user first
-	creatorID := generateUUID()
+	creatorID := util.GenerateUUID()
 	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", creatorID)
 	if err != nil {
 		t.Fatalf("Failed to create creator user: %v", err)
@@ -88,7 +89,7 @@ func TestHandleBallot_ClosedBallot_NonParticipant(t *testing.T) {
 	h := testHandler(t)
 
 	// Create creator user first
-	creatorID := generateUUID()
+	creatorID := util.GenerateUUID()
 	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", creatorID)
 	if err != nil {
 		t.Fatalf("Failed to create creator user: %v", err)
@@ -309,7 +310,7 @@ func TestHandleToggleOpen_NotParticipant(t *testing.T) {
 
 	req, rec, _ := authedRequest(t, h, "POST", "/ballot/test/toggle", nil)
 
-	differentUserID := generateUUID()
+	differentUserID := util.GenerateUUID()
 	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", differentUserID)
 	if err != nil {
 		t.Fatalf("Failed to create different user: %v", err)
@@ -374,7 +375,7 @@ func TestHandleSetName_NotParticipant(t *testing.T) {
 
 	req, rec, _ := authedRequest(t, h, "POST", "/ballot/test/name", strings.NewReader("name=TestUser"))
 
-	differentUserID := generateUUID()
+	differentUserID := util.GenerateUUID()
 	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", differentUserID)
 	if err != nil {
 		t.Fatalf("Failed to create different user: %v", err)

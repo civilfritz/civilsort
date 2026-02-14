@@ -17,38 +17,51 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+<main>
 <div class="container ballot">
-    <h1>Aggregate Statistics</h1>
-    <p class="help-text">De-identified system-wide statistics</p>
-
-    <div class="stats-list">
-        <div class="stat-item">
-            <span class="stat-label">Total ballots:</span>
-            <span class="stat-value">{{.TotalBallots}}</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Newest ballot:</span>
-            <span class="stat-value">{{.NewestBallot}}</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Most entries on a single ballot:</span>
-            <span class="stat-value">{{.MaxEntries}}</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Most participants on a single ballot:</span>
-            <span class="stat-value">{{.MaxParticipants}}</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Average entries per ballot:</span>
-            <span class="stat-value">{{printf "%.1f" .AvgEntries}}</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Average participants per ballot:</span>
-            <span class="stat-value">{{printf "%.1f" .AvgParticipants}}</span>
+    <div class="ballot-header">
+        <h1>Aggregate Statistics</h1>
+        <div class="menu-wrapper" id="menu-wrapper">
+            <button class="hamburger-menu" id="hamburger-menu" aria-label="Menu">☰</button>
+            <div class="menu-dropdown" id="menu-dropdown">
+                <nav class="menu-nav">
+                    <a href="/" class="menu-item">Home</a>
+                    <button class="menu-item theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">Light/Dark</button>
+                    <a href="/about" class="menu-item">About</a>
+                </nav>
+            </div>
         </div>
     </div>
+    <p class="help-text">De-identified system-wide statistics</p>
+
+    <dl class="stats-list">
+        <div class="stat-item">
+            <dt class="stat-label">Total ballots:</dt>
+            <dd class="stat-value">{{.TotalBallots}}</dd>
+        </div>
+        <div class="stat-item">
+            <dt class="stat-label">Newest ballot:</dt>
+            <dd class="stat-value">{{.NewestBallot}}</dd>
+        </div>
+        <div class="stat-item">
+            <dt class="stat-label">Most entries on a single ballot:</dt>
+            <dd class="stat-value">{{.MaxEntries}}</dd>
+        </div>
+        <div class="stat-item">
+            <dt class="stat-label">Most participants on a single ballot:</dt>
+            <dd class="stat-value">{{.MaxParticipants}}</dd>
+        </div>
+        <div class="stat-item">
+            <dt class="stat-label">Average entries per ballot:</dt>
+            <dd class="stat-value">{{printf "%.1f" .AvgEntries}}</dd>
+        </div>
+        <div class="stat-item">
+            <dt class="stat-label">Average participants per ballot:</dt>
+            <dd class="stat-value">{{printf "%.1f" .AvgParticipants}}</dd>
+        </div>
+    </dl>
 </div>
+</main>
 <script src="/static/app.js"></script>
 </body>
 </html>
