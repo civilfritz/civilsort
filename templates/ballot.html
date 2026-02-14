@@ -22,6 +22,7 @@
     <div class="ballot-header">
         <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
         <div class="ballot-controls">
+            <a href="/" class="new-ballot-btn">+ New</a>
             <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}">
                 {{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}
             </button>
@@ -96,7 +97,7 @@
         </ul>
     </div>
 
-    <p style="margin-top: 30px; font-size: 14px; text-align: center; border-top: 1px solid var(--border-light); padding-top: 15px;"><a href="/about">About civilsort</a></p>
+    <p class="back-link" style="border-top: 1px solid var(--border-light); padding-top: 15px;"><a href="/about?from={{.Ballot.ID}}">about civilsort</a></p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>

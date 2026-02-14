@@ -490,3 +490,22 @@ h2 {
     font-size: 16px;
     font-weight: 600;
 }
+
+/* New ballot button in ballot controls */
+.new-ballot-btn {
+    padding: 6px 14px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    text-decoration: none;
+    display: inline-block;
+}
+
+.new-ballot-btn:hover {
+    background: var(--bg-surface-alt);
+    color: var(--text);
+    text-decoration: none;
+}

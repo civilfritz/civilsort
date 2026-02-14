@@ -63,7 +63,11 @@
     </ul>
 
     <p class="back-link">
-        <a href="/">← Create a ballot</a>
+        {{if .FromBallot}}
+            <a href="/ballot/{{.FromBallot}}">← Return to ballot</a>
+        {{else}}
+            <a href="/">← Create a ballot</a>
+        {{end}}
     </p>
 </div>
 <script src="/static/app.js"></script>
