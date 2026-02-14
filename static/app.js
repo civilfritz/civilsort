@@ -70,6 +70,9 @@ function connectWebSocket() {
             } else if (msg.type === 'results') {
                 // Ranking changed - update results tab in-place
                 updateResultsList(msg.results);
+            } else if (msg.type === 'state_changed') {
+                // Ballot state changed - update toggle UI
+                updateToggleUI(msg.isOpen);
             }
         } catch (err) {
             console.error('Error parsing message:', err);
@@ -196,4 +199,76 @@ if (themeToggle) {
         localStorage.setItem('theme', newTheme);
         updateThemeIcon();
     });
+}
+
+// Ballot access toggle
+const toggleBtn = document.getElementById('toggle-open-btn');
+if (toggleBtn) {
+    toggleBtn.addEventListener('click', function() {
+        fetch(`/ballot/${ballotId}/toggle`, {
+            method: 'POST',
+        }).then(response => {
+            if (!response.ok) {
+                console.error('Error toggling ballot state');
+                return;
+            }
+            return response.json();
+        }).then(data => {
+            if (data) {
+                updateToggleUI(data.isOpen);
+            }
+        }).catch(err => {
+            console.error('Error toggling ballot state:', err);
+        });
+    });
+}
+
+// Copy URL button
+const copyUrlBtn = document.getElementById('copy-url-btn');
+const ballotUrlInput = document.getElementById('ballot-url');
+if (copyUrlBtn && ballotUrlInput) {
+    // Click to select on URL input
+    ballotUrlInput.addEventListener('click', function() {
+        this.select();
+    });
+
+    // Copy button functionality
+    copyUrlBtn.addEventListener('click', function() {
+        ballotUrlInput.select();
+        navigator.clipboard.writeText(ballotUrlInput.value).then(() => {
+            // Visual feedback
+            const originalText = copyUrlBtn.textContent;
+            copyUrlBtn.textContent = '✓';
+            setTimeout(() => {
+                copyUrlBtn.textContent = originalText;
+            }, 1500);
+        }).catch(err => {
+            console.error('Failed to copy URL:', err);
+        });
+    });
+}
+
+function updateToggleUI(newIsOpen) {
+    isOpen = newIsOpen;
+    const btn = document.getElementById('toggle-open-btn');
+    const urlInput = document.getElementById('ballot-url');
+    const copyBtn = document.getElementById('copy-url-btn');
+
+    if (!btn) return;
+
+    if (newIsOpen) {
+        btn.textContent = 'Open';
+        btn.classList.remove('toggle-closed');
+        btn.classList.add('toggle-open');
+        // Show URL input and copy button
+        if (urlInput) urlInput.style.display = '';
+        if (copyBtn) copyBtn.style.display = '';
+    } else {
+        btn.textContent = 'Closed';
+        btn.classList.remove('toggle-open');
+        btn.classList.add('toggle-closed');
+        // Hide URL input and copy button
+        if (urlInput) urlInput.style.display = 'none';
+        if (copyBtn) copyBtn.style.display = 'none';
+    }
 }

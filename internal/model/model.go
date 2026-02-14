@@ -12,6 +12,7 @@ type User struct {
 type Ballot struct {
 	ID        string
 	Title     string
+	IsOpen    bool
 	CreatedBy string
 	CreatedAt time.Time
 }

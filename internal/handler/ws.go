@@ -13,11 +13,9 @@ import (
 func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	// Verify ballot exists
-	var exists bool
-	err := h.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM ballots WHERE id = ?)", ballotID).Scan(&exists)
-	if err != nil || !exists {
-		http.NotFound(w, r)
+	// Check ballot access
+	ballot := h.checkBallotAccess(w, r, ballotID)
+	if ballot == nil {
 		return
 	}
 

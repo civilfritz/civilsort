@@ -144,24 +144,45 @@ h2 {
     margin-bottom: 20px;
 }
 
-.ballot-url {
-    margin-top: 10px;
+.ballot-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border-light);
 }
 
-.ballot-url label {
-    font-size: 14px;
-    color: var(--text-muted);
-    margin-right: 10px;
-}
-
-.ballot-url input {
-    padding: 5px 10px;
+.ballot-url-input {
+    flex: 1;
+    padding: 8px 12px;
     border: 1px solid var(--border);
     border-radius: 4px;
     font-size: 14px;
-    width: 300px;
     background: var(--bg-surface-alt);
     color: var(--text);
+    cursor: pointer;
+}
+
+.ballot-url-input:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.copy-btn {
+    padding: 8px 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    transition: all 0.2s;
+}
+
+.copy-btn:hover {
+    background: var(--bg-surface-alt);
+    border-color: var(--primary);
 }
 
 /* Tabs */
@@ -361,6 +382,39 @@ h2 {
 
 .theme-toggle:hover {
     background: var(--bg-surface-alt);
+}
+
+/* Ballot toggle button */
+.toggle-btn {
+    padding: 6px 16px;
+    border: 2px solid;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.toggle-open {
+    background: var(--success-bg);
+    border-color: var(--success-border);
+    color: var(--success-text);
+}
+
+.toggle-open:hover {
+    background: var(--success);
+    color: white;
+}
+
+.toggle-closed {
+    background: var(--bg-surface-alt);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.toggle-closed:hover {
+    background: var(--danger);
+    color: white;
 }
 
 /* Stats page */

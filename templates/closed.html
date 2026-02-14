@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ballot Closed - Schulze Voting</title>
+    <script>
+    (function() {
+        var saved = localStorage.getItem('theme');
+        if (saved) {
+            document.documentElement.dataset.theme = saved;
+        } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.dataset.theme = 'dark';
+        }
+    })();
+    </script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
+<div class="container home">
+    <h1>Ballot Closed</h1>
+    <p>This ballot is currently closed to new participants.</p>
+    <p><a href="/">Create your own ballot</a></p>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -39,6 +39,12 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Creator is automatically the first participant
+	if err := h.addParticipant(r.Context(), ballotID, userID); err != nil {
+		log.Printf("Error adding creator as participant: %v", err)
+		// Non-fatal: they'll be added when they visit the ballot page
+	}
+
 	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
 }
 
@@ -47,11 +53,12 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 	userID := UserID(r.Context())
 
-	// Get ballot
+	// Load ballot
 	var ballot model.Ballot
+	var isOpenInt int
 	err := h.db.QueryRowContext(r.Context(),
-		"SELECT id, title, created_by, created_at FROM ballots WHERE id = ?",
-		ballotID).Scan(&ballot.ID, &ballot.Title, &ballot.CreatedBy, &ballot.CreatedAt)
+		"SELECT id, title, is_open, created_by, created_at FROM ballots WHERE id = ?",
+		ballotID).Scan(&ballot.ID, &ballot.Title, &isOpenInt, &ballot.CreatedBy, &ballot.CreatedAt)
 	if err == sql.ErrNoRows {
 		http.NotFound(w, r)
 		return
@@ -59,6 +66,33 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error fetching ballot: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+	ballot.IsOpen = isOpenInt == 1
+
+	// Check access
+	isParticipant, err := h.isParticipant(r.Context(), ballotID, userID)
+	if err != nil {
+		log.Printf("Error checking participant: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if ballot.IsOpen {
+		// Open ballot: auto-add new visitors as participants
+		if !isParticipant {
+			if err := h.addParticipant(r.Context(), ballotID, userID); err != nil {
+				log.Printf("Error adding participant: %v", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
+	} else {
+		// Closed ballot: only existing participants allowed
+		if !isParticipant {
+			w.WriteHeader(http.StatusForbidden)
+			h.templates.ExecuteTemplate(w, "closed.html", nil)
+			return
+		}
 	}
 
 	// Get all items
@@ -117,6 +151,7 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		"UnrankedItems": unrankedItems,
 		"CurrentUser":   userID,
 		"Results":       results,
+		"IsOpen":        ballot.IsOpen,
 	}
 
 	if err := h.templates.ExecuteTemplate(w, "ballot.html", data); err != nil {
@@ -128,6 +163,12 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 // HandleAddItem adds a new item to the ballot.
 func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
+
+	ballot := h.checkBallotAccess(w, r, ballotID)
+	if ballot == nil {
+		return
+	}
+
 	userID := UserID(r.Context())
 
 	if err := r.ParseForm(); err != nil {
@@ -159,6 +200,12 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 // HandleDeleteItem deletes an item (only if the current user added it).
 func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
+
+	ballot := h.checkBallotAccess(w, r, ballotID)
+	if ballot == nil {
+		return
+	}
+
 	itemID := r.PathValue("itemID")
 	userID := UserID(r.Context())
 
@@ -197,6 +244,12 @@ func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 // HandleSaveRankings saves the user's ranking (JSON API).
 func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
+
+	ballot := h.checkBallotAccess(w, r, ballotID)
+	if ballot == nil {
+		return
+	}
+
 	userID := UserID(r.Context())
 
 	// Parse JSON body
@@ -256,6 +309,126 @@ func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 	h.broadcast(r.Context(), ballotID, "results")
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleToggleOpen toggles the ballot's open/closed state.
+func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	userID := UserID(r.Context())
+
+	// Only authorized participants can toggle
+	isParticipant, err := h.isParticipant(r.Context(), ballotID, userID)
+	if err != nil {
+		log.Printf("Error checking participant for toggle: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !isParticipant {
+		http.Error(w, "This ballot is currently closed.", http.StatusForbidden)
+		return
+	}
+
+	// Toggle: flip is_open between 0 and 1
+	var newIsOpenInt int
+	err = h.db.QueryRowContext(r.Context(),
+		"UPDATE ballots SET is_open = NOT is_open WHERE id = ? RETURNING is_open",
+		ballotID).Scan(&newIsOpenInt)
+	if err != nil {
+		log.Printf("Error toggling ballot state: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	newIsOpen := newIsOpenInt == 1
+
+	// Broadcast state change via WebSocket
+	h.broadcastStateChange(ballotID, newIsOpen)
+
+	// Return JSON with the new state
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"isOpen": newIsOpen,
+	})
+}
+
+// broadcastStateChange broadcasts a ballot open/closed state change to all WebSocket clients.
+func (h *Handler) broadcastStateChange(ballotID string, isOpen bool) {
+	msg := map[string]interface{}{
+		"type":   "state_changed",
+		"isOpen": isOpen,
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling state change for broadcast: %v", err)
+		return
+	}
+
+	h.hub.Broadcast(ballotID, data)
+}
+
+// isParticipant checks if a user is an authorized participant of a ballot.
+func (h *Handler) isParticipant(ctx context.Context, ballotID, userID string) (bool, error) {
+	var exists bool
+	err := h.db.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM ballot_participants WHERE ballot_id = ? AND user_id = ?)",
+		ballotID, userID).Scan(&exists)
+	return exists, err
+}
+
+// addParticipant records a user as an authorized participant (idempotent).
+func (h *Handler) addParticipant(ctx context.Context, ballotID, userID string) error {
+	_, err := h.db.ExecContext(ctx,
+		"INSERT OR IGNORE INTO ballot_participants (ballot_id, user_id) VALUES (?, ?)",
+		ballotID, userID)
+	return err
+}
+
+// checkBallotAccess verifies the user can access the ballot.
+// Returns the ballot if access is granted, or writes an HTTP error and returns nil.
+// If the ballot is open and the user is new, they are automatically added as a participant.
+func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ballotID string) *model.Ballot {
+	userID := UserID(r.Context())
+
+	var ballot model.Ballot
+	var isOpenInt int
+	err := h.db.QueryRowContext(r.Context(),
+		"SELECT id, title, is_open, created_by, created_at FROM ballots WHERE id = ?",
+		ballotID).Scan(&ballot.ID, &ballot.Title, &isOpenInt, &ballot.CreatedBy, &ballot.CreatedAt)
+	if err == sql.ErrNoRows {
+		http.NotFound(w, r)
+		return nil
+	} else if err != nil {
+		log.Printf("Error fetching ballot: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return nil
+	}
+	ballot.IsOpen = isOpenInt == 1
+
+	isParticipant, err := h.isParticipant(r.Context(), ballotID, userID)
+	if err != nil {
+		log.Printf("Error checking participant: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return nil
+	}
+
+	if ballot.IsOpen {
+		// Open ballot: auto-add new visitors as participants
+		if !isParticipant {
+			if err := h.addParticipant(r.Context(), ballotID, userID); err != nil {
+				log.Printf("Error adding participant: %v", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return nil
+			}
+		}
+		return &ballot
+	}
+
+	// Closed ballot: only existing participants allowed
+	if !isParticipant {
+		http.Error(w, "This ballot is currently closed.", http.StatusForbidden)
+		return nil
+	}
+	return &ballot
 }
 
 // getItems retrieves all items for a ballot.

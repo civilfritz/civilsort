@@ -32,6 +32,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ballot/{id}/items", h.HandleAddItem)
 	mux.HandleFunc("POST /ballot/{id}/items/{itemID}/delete", h.HandleDeleteItem)
 	mux.HandleFunc("POST /ballot/{id}/rankings", h.HandleSaveRankings)
+	mux.HandleFunc("POST /ballot/{id}/toggle", h.HandleToggleOpen)
 	mux.HandleFunc("GET /ballot/{id}/ws", h.HandleWebSocket)
 	mux.HandleFunc("GET /stats", h.HandleStats)
 }

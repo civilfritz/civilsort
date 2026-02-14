@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	_ "modernc.org/sqlite"
 )
 
@@ -44,6 +45,7 @@ func migrate(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS ballots (
 		id         TEXT PRIMARY KEY,
 		title      TEXT NOT NULL DEFAULT '',
+		is_open    INTEGER NOT NULL DEFAULT 1,
 		created_by TEXT NOT NULL REFERENCES users(id),
 		created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 	);
@@ -67,5 +69,29 @@ func migrate(db *sql.DB) error {
 	`
 
 	_, err := db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Additive migrations for existing databases
+	migrations := []string{
+		`ALTER TABLE ballots ADD COLUMN is_open INTEGER NOT NULL DEFAULT 1`,
+		`CREATE TABLE IF NOT EXISTS ballot_participants (
+			ballot_id  TEXT NOT NULL REFERENCES ballots(id) ON DELETE CASCADE,
+			user_id    TEXT NOT NULL REFERENCES users(id),
+			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+			PRIMARY KEY (ballot_id, user_id)
+		)`,
+	}
+
+	for _, m := range migrations {
+		_, err := db.Exec(m)
+		// Ignore "duplicate column" or "table already exists" errors
+		if err != nil && !strings.Contains(err.Error(), "duplicate column") &&
+			!strings.Contains(err.Error(), "already exists") {
+			return err
+		}
+	}
+
+	return nil
 }

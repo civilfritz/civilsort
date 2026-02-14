@@ -21,9 +21,12 @@
 <div class="container ballot">
     <div class="ballot-header">
         <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
-        <div class="ballot-url">
-            <label>Share this URL:</label>
-            <input type="text" readonly id="ballot-url" onclick="this.select()">
+        <div class="ballot-controls">
+            <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}">
+                {{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}
+            </button>
+            <input type="text" readonly id="ballot-url" class="ballot-url-input" {{if not .Ballot.IsOpen}}style="display: none;"{{end}}>
+            <button type="button" id="copy-url-btn" class="copy-btn" aria-label="Copy URL" title="Copy URL" {{if not .Ballot.IsOpen}}style="display: none;"{{end}}>📋</button>
             <script>
                 document.getElementById('ballot-url').value = window.location.origin + '/ballot/{{.Ballot.ID}}';
             </script>
@@ -98,6 +101,7 @@
 <script>
     const ballotId = "{{.Ballot.ID}}";
     const currentUserId = "{{.CurrentUser}}";
+    let isOpen = {{if .Ballot.IsOpen}}true{{else}}false{{end}};
 </script>
 <script src="/static/app.js"></script>
 </body>
