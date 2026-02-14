@@ -1,3 +1,51 @@
+// Hamburger menu
+const hamburgerMenu = document.getElementById('hamburger-menu');
+const menuDropdown = document.getElementById('menu-dropdown');
+const menuWrapper = document.getElementById('menu-wrapper');
+
+if (hamburgerMenu && menuDropdown) {
+    hamburgerMenu.addEventListener('click', (e) => {
+        e.stopPropagation();
+        menuDropdown.classList.toggle('open');
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (menuDropdown.classList.contains('open') && !menuWrapper.contains(e.target)) {
+            menuDropdown.classList.remove('open');
+        }
+    });
+
+    // Close menu on escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && menuDropdown.classList.contains('open')) {
+            menuDropdown.classList.remove('open');
+        }
+    });
+
+    // Don't close menu when clicking theme toggle, copy, or share buttons
+    const menuThemeToggle = menuDropdown.querySelector('.theme-toggle');
+    if (menuThemeToggle) {
+        menuThemeToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    }
+
+    const menuCopyBtn = menuDropdown.querySelector('#copy-url-btn');
+    if (menuCopyBtn) {
+        menuCopyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    }
+
+    const menuShareBtn = menuDropdown.querySelector('#share-url-btn');
+    if (menuShareBtn) {
+        menuShareBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+    }
+}
+
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -312,10 +360,10 @@ if (typeof ballotId !== 'undefined') {
 // Theme toggle
 const themeToggle = document.getElementById('theme-toggle');
 if (themeToggle) {
-    // Set initial icon
+    // Set initial text
     function updateThemeIcon() {
         const currentTheme = document.documentElement.dataset.theme || 'light';
-        themeToggle.textContent = currentTheme === 'dark' ? '☀️' : '🌙';
+        themeToggle.textContent = currentTheme === 'dark' ? 'Light mode' : 'Dark mode';
     }
     updateThemeIcon();
 
@@ -352,20 +400,15 @@ if (toggleBtn) {
 
 // Copy URL button
 const copyUrlBtn = document.getElementById('copy-url-btn');
-const ballotUrlInput = document.getElementById('ballot-url');
-if (copyUrlBtn && ballotUrlInput) {
-    // Click to select on URL input
-    ballotUrlInput.addEventListener('click', function() {
-        this.select();
-    });
-
+const shareUrlBtn = document.getElementById('share-url-btn');
+if (copyUrlBtn && typeof ballotId !== 'undefined') {
     // Copy button functionality
     copyUrlBtn.addEventListener('click', function() {
-        ballotUrlInput.select();
-        navigator.clipboard.writeText(ballotUrlInput.value).then(() => {
+        const ballotUrl = `${window.location.origin}/ballot/${ballotId}`;
+        navigator.clipboard.writeText(ballotUrl).then(() => {
             // Visual feedback
             const originalText = copyUrlBtn.textContent;
-            copyUrlBtn.textContent = '✓';
+            copyUrlBtn.textContent = '✓ Copied!';
             setTimeout(() => {
                 copyUrlBtn.textContent = originalText;
             }, 1500);
@@ -375,11 +418,35 @@ if (copyUrlBtn && ballotUrlInput) {
     });
 }
 
+// Share button functionality (Web Share API)
+if (shareUrlBtn && typeof ballotId !== 'undefined') {
+    // Check if Web Share API is available
+    if (!navigator.share) {
+        // Hide share button if API not available
+        shareUrlBtn.style.display = 'none';
+    } else {
+        shareUrlBtn.addEventListener('click', async function() {
+            try {
+                const ballotUrl = `${window.location.origin}/ballot/${ballotId}`;
+                const ballotTitle = document.querySelector('.ballot-header h1')?.textContent || 'Ballot';
+                await navigator.share({
+                    title: ballotTitle,
+                    text: `Vote on: ${ballotTitle}`,
+                    url: ballotUrl
+                });
+            } catch (err) {
+                // User cancelled or error occurred
+                if (err.name !== 'AbortError') {
+                    console.error('Failed to share:', err);
+                }
+            }
+        });
+    }
+}
+
 function updateToggleUI(newIsOpen) {
     isOpen = newIsOpen;
     const btn = document.getElementById('toggle-open-btn');
-    const urlInput = document.getElementById('ballot-url');
-    const copyBtn = document.getElementById('copy-url-btn');
 
     if (!btn) return;
 
@@ -387,15 +454,9 @@ function updateToggleUI(newIsOpen) {
         btn.textContent = 'Open';
         btn.classList.remove('toggle-closed');
         btn.classList.add('toggle-open');
-        // Show URL input and copy button
-        if (urlInput) urlInput.style.display = '';
-        if (copyBtn) copyBtn.style.display = '';
     } else {
         btn.textContent = 'Closed';
         btn.classList.remove('toggle-open');
         btn.classList.add('toggle-closed');
-        // Hide URL input and copy button
-        if (urlInput) urlInput.style.display = 'none';
-        if (copyBtn) copyBtn.style.display = 'none';
     }
 }

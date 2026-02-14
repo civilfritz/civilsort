@@ -17,8 +17,18 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
 <div class="container home">
+    <div class="home-header">
+        <div class="menu-wrapper" id="menu-wrapper">
+            <button class="hamburger-menu" id="hamburger-menu" aria-label="Menu">☰</button>
+            <div class="menu-dropdown" id="menu-dropdown">
+                <nav class="menu-nav">
+                    <button class="menu-item theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">Light/Dark</button>
+                    <a href="/about" class="menu-item">About</a>
+                </nav>
+            </div>
+        </div>
+    </div>
     <h1>civilsort</h1>
     <p>Sort it out together.</p>
 
@@ -28,8 +38,7 @@
 
         <button type="submit">Create Ballot</button>
     </form>
-
-    <p style="margin-top: 30px; font-size: 14px;"><a href="/about">about civilsort</a></p>
 </div>
+<script src="/static/app.js"></script>
 </body>
 </html>

@@ -151,48 +151,19 @@ h2 {
 }
 
 .ballot-header {
-    margin-bottom: 20px;
-}
-
-.ballot-controls {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
-    margin-top: 15px;
+    margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 1px solid var(--border-light);
 }
 
-.ballot-url-input {
+.ballot-header h1 {
     flex: 1;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 14px;
-    background: var(--bg-surface-alt);
-    color: var(--text);
-    cursor: pointer;
-}
-
-.ballot-url-input:focus {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-}
-
-.copy-btn {
-    padding: 8px 12px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
-    transition: all 0.2s;
-}
-
-.copy-btn:hover {
-    background: var(--bg-surface-alt);
-    border-color: var(--primary);
+    text-align: left;
+    margin: 0;
 }
 
 /* Tabs */
@@ -361,10 +332,8 @@ h2 {
 }
 
 /* Theme toggle */
-.theme-toggle {
-    position: fixed;
-    top: 20px;
-    right: 20px;
+/* Hamburger menu */
+.hamburger-menu {
     padding: 8px 12px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
@@ -373,11 +342,87 @@ h2 {
     font-size: 20px;
     line-height: 1;
     transition: background 0.2s;
-    z-index: 1000;
 }
 
-.theme-toggle:hover {
+.hamburger-menu:hover {
     background: var(--bg-surface-alt);
+}
+
+/* Home page header */
+.home-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 20px;
+}
+
+.menu-wrapper {
+    position: relative;
+}
+
+.menu-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 5px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    min-width: 180px;
+    box-shadow: 0 4px 12px var(--shadow);
+    z-index: 2000;
+    animation: slideDown 0.15s ease-out;
+}
+
+.menu-dropdown.open {
+    display: block;
+}
+
+.menu-nav {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 0;
+}
+
+.menu-item {
+    display: block;
+    padding: 10px 16px;
+    text-decoration: none;
+    color: var(--text);
+    background: transparent;
+    border: none;
+    transition: background 0.15s;
+    text-align: right;
+    font-weight: normal;
+    font-size: 15px;
+    cursor: pointer;
+    font-family: inherit;
+    width: 100%;
+    white-space: nowrap;
+}
+
+.menu-item:hover {
+    background: var(--bg-surface-alt);
+    text-decoration: none;
+}
+
+.menu-item:first-child {
+    border-radius: 6px 6px 0 0;
+}
+
+.menu-item:last-child {
+    border-radius: 0 0 6px 6px;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Ballot toggle button */
@@ -470,12 +515,6 @@ h2 {
     margin-top: 30px;
 }
 
-.ballot .back-link {
-    margin-top: 40px;
-    text-align: center;
-    font-size: 16px;
-    font-weight: 600;
-}
 
 /* New ballot button in ballot controls */
 .new-ballot-btn {

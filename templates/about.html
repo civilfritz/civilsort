@@ -17,9 +17,11 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
 <div class="container ballot">
-    <h1>About civilsort</h1>
+    <div class="ballot-header">
+        <h1>About civilsort</h1>
+        <a href="javascript:history.back()" class="hamburger-menu" aria-label="Go back">←</a>
+    </div>
     <p class="help-text">Sort it out together.</p>
 
     <h2 >How It Works</h2>
@@ -65,14 +67,6 @@
     <p class="help-text" style="margin-top: 2em;">
         <a href="https://github.com/civilfritz/civilsort" target="_blank">View source on GitHub</a> ·
         <a href="https://github.com/civilfritz/civilsort/issues" target="_blank">Report a bug</a>
-    </p>
-
-    <p class="back-link">
-        {{if .FromBallot}}
-            <a href="/ballot/{{.FromBallot}}">← Return to ballot</a>
-        {{else}}
-            <a href="/">← Create a ballot</a>
-        {{end}}
     </p>
 </div>
 <script src="/static/app.js"></script>

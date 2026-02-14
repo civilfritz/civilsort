@@ -17,20 +17,23 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
 <div class="container ballot">
     <div class="ballot-header">
+        <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}">
+            {{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}
+        </button>
         <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
-        <div class="ballot-controls">
-            <a href="/" class="new-ballot-btn">+ New</a>
-            <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}">
-                {{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}
-            </button>
-            <input type="text" readonly id="ballot-url" class="ballot-url-input" {{if not .Ballot.IsOpen}}style="display: none;"{{end}}>
-            <button type="button" id="copy-url-btn" class="copy-btn" aria-label="Copy URL" title="Copy URL" {{if not .Ballot.IsOpen}}style="display: none;"{{end}}>📋</button>
-            <script>
-                document.getElementById('ballot-url').value = window.location.origin + '/ballot/{{.Ballot.ID}}';
-            </script>
+        <div class="menu-wrapper" id="menu-wrapper">
+            <button class="hamburger-menu" id="hamburger-menu" aria-label="Menu">☰</button>
+            <div class="menu-dropdown" id="menu-dropdown">
+                <nav class="menu-nav">
+                    <a href="/" class="menu-item">New Ballot</a>
+                    <button class="menu-item" id="copy-url-btn" aria-label="Copy ballot URL">Copy Link</button>
+                    <button class="menu-item" id="share-url-btn" aria-label="Share ballot">Share</button>
+                    <button class="menu-item theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">Light/Dark</button>
+                    <a href="/about?from={{.Ballot.ID}}" class="menu-item">About</a>
+                </nav>
+            </div>
         </div>
     </div>
 
@@ -120,8 +123,6 @@
             {{end}}
         </ul>
     </div>
-
-    <p class="back-link" style="border-top: 1px solid var(--border-light); padding-top: 15px;"><a href="/about?from={{.Ballot.ID}}">about civilsort</a></p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
