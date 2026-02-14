@@ -17,6 +17,7 @@ deb: build
 	sed 's/VERSION_PLACEHOLDER/$(VERSION)/' debian/control > dist/deb/DEBIAN/control
 	cp debian/postinst dist/deb/DEBIAN/
 	chmod 755 dist/deb/DEBIAN/postinst
+	echo "/etc/default/civilsort" > dist/deb/DEBIAN/conffiles
 	dpkg-deb --build dist/deb dist/$(BINARY)_$(VERSION)_amd64.deb
 
 clean:
