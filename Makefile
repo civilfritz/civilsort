@@ -1,5 +1,5 @@
 BINARY  := civilsort
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^[^0-9]/0.0.0-&/' || echo 0.0.0-dev)
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo 0.0.0-dev)
 
 .PHONY: build clean deb
 
