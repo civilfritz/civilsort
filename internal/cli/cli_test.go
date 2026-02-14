@@ -14,7 +14,7 @@ func TestListBallots_Empty(t *testing.T) {
 	}
 	defer database.Close()
 
-	err = listBallots(database)
+	err = ListBallots(database)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -54,7 +54,7 @@ func TestListBallots_WithData(t *testing.T) {
 		t.Fatalf("Failed to add item: %v", err)
 	}
 
-	err = listBallots(database)
+	err = ListBallots(database)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -67,7 +67,7 @@ func TestListItems_NotFound(t *testing.T) {
 	}
 	defer database.Close()
 
-	err = listItems(database, "nonexistent")
+	err = ListItems(database, "nonexistent")
 	if err == nil {
 		t.Error("Expected error for nonexistent ballot, got nil")
 	}
@@ -95,7 +95,7 @@ func TestListItems_Empty(t *testing.T) {
 		t.Fatalf("Failed to create ballot: %v", err)
 	}
 
-	err = listItems(database, "ballot1")
+	err = ListItems(database, "ballot1")
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -148,7 +148,7 @@ func TestListItems_WithResults(t *testing.T) {
 		t.Fatalf("Failed to add rankings: %v", err)
 	}
 
-	err = listItems(database, "ballot1")
+	err = ListItems(database, "ballot1")
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -161,7 +161,7 @@ func TestListParticipants_NotFound(t *testing.T) {
 	}
 	defer database.Close()
 
-	err = listParticipants(database, "nonexistent")
+	err = ListParticipants(database, "nonexistent")
 	if err == nil {
 		t.Error("Expected error for nonexistent ballot, got nil")
 	}
@@ -197,7 +197,7 @@ func TestListParticipants_WithData(t *testing.T) {
 		t.Fatalf("Failed to add participants: %v", err)
 	}
 
-	err = listParticipants(database, "ballot1")
+	err = ListParticipants(database, "ballot1")
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}

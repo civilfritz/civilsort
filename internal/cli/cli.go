@@ -36,30 +36,8 @@ type participantRow struct {
 	DisplayName   string
 }
 
-// Run executes a CLI subcommand. args is everything after "list".
-func Run(db *sql.DB, args []string) error {
-	if len(args) == 0 {
-		return listBallots(db)
-	}
-
-	switch args[0] {
-	case "items":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: civilsort list items <ballot-id>")
-		}
-		return listItems(db, args[1])
-	case "participants":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: civilsort list participants <ballot-id>")
-		}
-		return listParticipants(db, args[1])
-	default:
-		return fmt.Errorf("unknown subcommand: %s\nusage: civilsort list [items|participants] [<ballot-id>]", args[0])
-	}
-}
-
-// listBallots prints all ballots with participant and item counts.
-func listBallots(db *sql.DB) error {
+// ListBallots prints all ballots with participant and item counts.
+func ListBallots(db *sql.DB) error {
 	ctx := context.Background()
 	rows, err := db.QueryContext(ctx, `
 		SELECT b.id, b.created_at, b.title,
@@ -110,8 +88,8 @@ func printBallotsTable(ballots []ballotRow) error {
 	return w.Flush()
 }
 
-// listItems prints items for a ballot in Schulze result order.
-func listItems(db *sql.DB, ballotID string) error {
+// ListItems prints items for a ballot in Schulze result order.
+func ListItems(db *sql.DB, ballotID string) error {
 	ctx := context.Background()
 
 	// Verify ballot exists
@@ -150,8 +128,8 @@ func printItemsTable(results []resultEntry) error {
 	return w.Flush()
 }
 
-// listParticipants prints participants for a ballot.
-func listParticipants(db *sql.DB, ballotID string) error {
+// ListParticipants prints participants for a ballot.
+func ListParticipants(db *sql.DB, ballotID string) error {
 	ctx := context.Background()
 
 	// Verify ballot exists
