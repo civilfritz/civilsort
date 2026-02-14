@@ -3,12 +3,14 @@ package main
 import (
 	"embed"
 	"flag"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/civilfritz/civilsort/internal/cli"
 	"github.com/civilfritz/civilsort/internal/db"
 	"github.com/civilfritz/civilsort/internal/handler"
 	"github.com/civilfritz/civilsort/internal/hub"
@@ -21,6 +23,33 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 func main() {
+	// Check for CLI subcommands before flag parsing
+	if len(os.Args) > 1 && os.Args[1] == "list" {
+		// CLI mode: create separate flag set
+		fs := flag.NewFlagSet("list", flag.ExitOnError)
+		dbDefault := "civilsort.db"
+		if v := os.Getenv("CIVILSORT_DB"); v != "" {
+			dbDefault = v
+		}
+		dbPath := fs.String("db", dbDefault, "SQLite database path (env: CIVILSORT_DB)")
+		fs.Parse(os.Args[2:])
+
+		// Open database
+		database, err := db.Open(*dbPath)
+		if err != nil {
+			log.Fatalf("Failed to open database: %v", err)
+		}
+		defer database.Close()
+
+		// Run CLI command
+		if err := cli.Run(database, fs.Args()); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Server mode: original code
 	var addr, dbPath string
 
 	addrDefault := ":8080"
