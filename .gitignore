@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-voting
+/civilsort
 *.test
 
 # Test binary, built with `go test -c`

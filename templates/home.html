@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Create a Ballot - Schulze Voting</title>
+    <title>Create a Ballot - civilsort</title>
     <script>
     (function() {
         var saved = localStorage.getItem('theme');
@@ -19,8 +19,8 @@
 <body>
 <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">🌙</button>
 <div class="container home">
-    <h1>Schulze Method Voting</h1>
-    <p>Create a ranked-choice ballot using the Schulze method.</p>
+    <h1>civilsort</h1>
+    <p>Sort it out together.</p>
 
     <form method="POST" action="/" class="create-ballot-form">
         <label for="title">Ballot Title (optional)</label>
@@ -28,6 +28,8 @@
 
         <button type="submit">Create Ballot</button>
     </form>
+
+    <p style="margin-top: 30px; font-size: 14px;"><a href="/about">About civilsort</a></p>
 </div>
 </body>
 </html>

@@ -1,7 +1,6 @@
 # Features to add
 
-- rate limits
-- "are you sure?" on delete
-- "copy url" button / share directly button
-- Re-title
-- /about with information about the algorithm1
+- Copyright information
+- Deployment / packaging with systemd service
+- Github automation
+- configurable database location

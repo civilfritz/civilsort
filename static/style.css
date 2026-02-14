@@ -63,6 +63,16 @@ body {
     background: var(--bg);
 }
 
+a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--primary-hover);
+    text-decoration: underline;
+}
+
 .container {
     max-width: 800px;
     margin: 0 auto;
@@ -443,4 +453,40 @@ h2 {
     font-size: 1.2em;
     font-weight: 600;
     color: var(--primary);
+}
+
+/* About page */
+.ballot ol,
+.ballot ul {
+    margin: 15px 0;
+    padding-left: 25px;
+    line-height: 1.8;
+}
+
+.ballot ol {
+    list-style: decimal;
+}
+
+.ballot ul {
+    list-style: disc;
+}
+
+.ballot li {
+    margin: 8px 0;
+}
+
+.ballot ul ul {
+    margin-top: 8px;
+    margin-bottom: 0;
+}
+
+.ballot h2 {
+    margin-top: 30px;
+}
+
+.ballot .back-link {
+    margin-top: 40px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
 }

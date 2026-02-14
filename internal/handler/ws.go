@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/coder/websocket"
-	hubpkg "github.com/civilfritz/voting/internal/hub"
+	hubpkg "github.com/civilfritz/civilsort/internal/hub"
 )
 
 // HandleWebSocket upgrades to WebSocket for live results.

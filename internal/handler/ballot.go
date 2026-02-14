@@ -7,8 +7,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/civilfritz/voting/internal/model"
-	"github.com/civilfritz/voting/internal/schulze"
+	"github.com/civilfritz/civilsort/internal/model"
+	"github.com/civilfritz/civilsort/internal/schulze"
 )
 
 // HandleHome shows the landing page with the create ballot form.

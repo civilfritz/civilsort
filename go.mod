@@ -1,4 +1,4 @@
-module github.com/civilfritz/voting
+module github.com/civilfritz/civilsort
 
 go 1.25.6
 

@@ -8,9 +8,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/civilfritz/voting/internal/db"
-	"github.com/civilfritz/voting/internal/handler"
-	"github.com/civilfritz/voting/internal/hub"
+	"github.com/civilfritz/civilsort/internal/db"
+	"github.com/civilfritz/civilsort/internal/handler"
+	"github.com/civilfritz/civilsort/internal/hub"
 )
 
 //go:embed templates/*.html
@@ -21,7 +21,7 @@ var staticFS embed.FS
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
-	dbPath := flag.String("db", "voting.db", "SQLite database path")
+	dbPath := flag.String("db", "civilsort.db", "SQLite database path")
 	flag.Parse()
 
 	// Open database

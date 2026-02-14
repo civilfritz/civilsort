@@ -24,6 +24,16 @@ if (location.hash) {
     }
 }
 
+// Confirm before deleting items
+document.addEventListener('submit', function(e) {
+    if (!e.target.classList.contains('delete-form')) return;
+    const item = e.target.closest('.ranked-item');
+    const name = item ? item.querySelector('.item-name').textContent.trim() : 'this item';
+    if (!confirm('Are you sure you want to delete "' + name + '"?')) {
+        e.preventDefault();
+    }
+});
+
 // Drag-and-drop ranking with two zones
 const rankedList = document.getElementById('ranked-list');
 const unrankedList = document.getElementById('unranked-list');

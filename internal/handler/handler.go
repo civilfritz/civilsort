@@ -5,7 +5,7 @@ import (
 	"html/template"
 	"net/http"
 
-	"github.com/civilfritz/voting/internal/hub"
+	"github.com/civilfritz/civilsort/internal/hub"
 )
 
 // Handler holds dependencies for HTTP handlers.
@@ -34,5 +34,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ballot/{id}/rankings", h.HandleSaveRankings)
 	mux.HandleFunc("POST /ballot/{id}/toggle", h.HandleToggleOpen)
 	mux.HandleFunc("GET /ballot/{id}/ws", h.HandleWebSocket)
+	mux.HandleFunc("GET /about", h.HandleAbout)
 	mux.HandleFunc("GET /stats", h.HandleStats)
 }

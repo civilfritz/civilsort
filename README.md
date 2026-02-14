@@ -1,23 +1,29 @@
-# Schulze Method Ranked-Choice Voting
+# civilsort
 
-A web application for conducting ranked-choice voting using the Schulze method (also known as the Condorcet method). Built in Go with real-time WebSocket updates.
+A web application for ranked-choice voting with real-time results. Uses the Schulze method (Condorcet completion) to compute fair, cycle-resistant rankings from collaborative ballots. Built in Go with WebSocket updates.
 
 ## Features
 
 - **No login required** - Users are identified by secure browser cookies
 - **Unique ballot URLs** - Each ballot gets a shareable URL
+- **Ballot access control** - Open/Closed toggle to control new participant access; authorized participants can always re-join
+- **Copy URL to clipboard** - One-click copy button next to the share URL
 - **Collaborative item management** - Any participant can add items; users can delete items they added
+- **Delete confirmation** - Prompts "Are you sure?" before deleting items
 - **Drag-and-drop ranking** - Intuitive interface using SortableJS
 - **Real-time results** - Results update live across all connected browsers via WebSockets
+- **Dynamic updates** - Items added/deleted by other users update in-place without losing scroll position or input text
+- **Dark/light mode** - Toggle with system preference detection and localStorage persistence
 - **Schulze algorithm** - Implements the Schulze method for computing the final ranking
+- **Hidden stats page** - De-identified aggregate statistics at `/stats`
 - **Clean, responsive UI** - Works on desktop and mobile
 
 ## Quick Start
 
 1. **Build and run:**
    ```bash
-   go build -o voting
-   ./voting
+   go build -o civilsort
+   ./civilsort
    ```
 
 2. **Open in browser:**
@@ -46,21 +52,31 @@ civilfritz-voting/
 │   ├── schulze/                  # Pure Schulze algorithm with tests
 │   ├── handler/                  # HTTP handlers and middleware
 │   └── hub/                      # WebSocket broadcast hub
-├── templates/                    # HTML templates
+├── templates/
+│   ├── home.html                 # Landing page
+│   ├── ballot.html               # Main ballot interface
+│   ├── about.html                # About page with usage help
+│   ├── stats.html                # Aggregate statistics
+│   └── closed.html               # "Ballot is closed" error page
 ├── static/                       # CSS and JavaScript
-└── voting.db                     # SQLite database (created at runtime)
+└── civilsort.db                  # SQLite database (created at runtime)
 ```
 
 ## How It Works
 
 ### User Flow
 1. Visit the homepage to create a new ballot (optionally with a title)
-2. Share the unique ballot URL with participants
-3. Each participant can:
+2. Share the unique ballot URL with participants (click the 📋 button to copy)
+3. Control access with the **Open/Closed** toggle:
+   - **Open**: New visitors can join and become participants
+   - **Closed**: Only existing participants can access the ballot
+   - The share URL and copy button are hidden when the ballot is closed
+4. Each participant can:
    - Add items to the ballot
-   - Remove items they added
+   - Remove items they added (with confirmation prompt)
    - Rank all items via drag-and-drop
-4. The Results tab shows the live Schulze ranking, updated in real-time
+5. The Results tab shows the live Schulze ranking, updated in real-time
+6. Toggle between light/dark mode with the theme button (top-right)
 
 ### Cookie-Based Authentication
 - First visit generates a UUID v4 stored in an HttpOnly, SameSite=Lax cookie
@@ -81,10 +97,11 @@ The [Schulze method](https://en.wikipedia.org/wiki/Schulze_method) is a Condorce
 
 ### Real-Time Updates
 - Each ballot has a WebSocket hub that manages connected clients
-- When any user saves a ranking or adds/removes an item:
-  1. The server recomputes the Schulze results
-  2. The hub broadcasts the new results to all connected clients
-  3. The Results tab updates instantly without page refresh
+- When any user saves a ranking, adds/removes an item, or toggles the ballot state:
+  1. The server recomputes the Schulze results (if needed)
+  2. The hub broadcasts updates to all connected clients
+  3. The UI updates instantly without page refresh using DOM reconciliation
+- Updates preserve scroll position and input text - you won't lose what you're typing
 
 ## Testing
 
@@ -110,11 +127,11 @@ Test cases include:
 
 Command-line flags:
 ```bash
-./voting -addr :8080 -db voting.db
+./civilsort -addr :8080 -db civilsort.db
 ```
 
 - `-addr`: Listen address (default: `:8080`)
-- `-db`: SQLite database path (default: `voting.db`)
+- `-db`: SQLite database path (default: `civilsort.db`)
 
 ## Database Schema
 
@@ -127,8 +144,16 @@ CREATE TABLE users (
 CREATE TABLE ballots (
     id         TEXT PRIMARY KEY,   -- 8-char base62 (URL-friendly)
     title      TEXT DEFAULT '',
+    is_open    INTEGER NOT NULL DEFAULT 1,  -- 1 = open, 0 = closed
     created_by TEXT REFERENCES users(id),
     created_at DATETIME DEFAULT (datetime('now'))
+);
+
+CREATE TABLE ballot_participants (
+    ballot_id  TEXT REFERENCES ballots(id) ON DELETE CASCADE,
+    user_id    TEXT REFERENCES users(id),
+    created_at DATETIME DEFAULT (datetime('now')),
+    PRIMARY KEY (ballot_id, user_id)
 );
 
 CREATE TABLE items (

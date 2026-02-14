@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}} - Schulze Voting</title>
+    <title>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}} - civilsort</title>
     <script>
     (function() {
         var saved = localStorage.getItem('theme');
@@ -84,7 +84,7 @@
     </div>
 
     <div id="results-tab" class="tab-panel">
-        <h2>Results (Schulze Method)</h2>
+        <h2>Results</h2>
         <ul id="results-list" class="results-list">
             {{if .Results}}
                 {{range .Results}}
@@ -95,6 +95,8 @@
             {{end}}
         </ul>
     </div>
+
+    <p style="margin-top: 30px; font-size: 14px; text-align: center; border-top: 1px solid var(--border-light); padding-top: 15px;"><a href="/about">About civilsort</a></p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
