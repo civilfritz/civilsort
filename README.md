@@ -182,7 +182,9 @@ CREATE TABLE rankings (
 
 ## License
 
-This is a demonstration project. Use freely!
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
+
+Copyright © 2026 Jonathon Anderson
 
 ## Credits
 
