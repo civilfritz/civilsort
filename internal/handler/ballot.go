@@ -145,13 +145,25 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get participant count
+	var participantCount int
+	err = h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM ballot_participants WHERE ballot_id = ?",
+		ballotID).Scan(&participantCount)
+	if err != nil {
+		log.Printf("Error counting participants: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	data := map[string]interface{}{
-		"Ballot":        ballot,
-		"RankedItems":   rankedItems,
-		"UnrankedItems": unrankedItems,
-		"CurrentUser":   userID,
-		"Results":       results,
-		"IsOpen":        ballot.IsOpen,
+		"Ballot":           ballot,
+		"RankedItems":      rankedItems,
+		"UnrankedItems":    unrankedItems,
+		"CurrentUser":      userID,
+		"Results":          results,
+		"IsOpen":           ballot.IsOpen,
+		"ParticipantCount": participantCount,
 	}
 
 	if err := h.templates.ExecuteTemplate(w, "ballot.html", data); err != nil {

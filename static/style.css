@@ -509,3 +509,11 @@ h2 {
     color: var(--text);
     text-decoration: none;
 }
+
+/* Participant count */
+.participant-count {
+    font-size: 13px;
+    color: var(--text-subtle);
+    margin: 12px 0 16px;
+    text-align: center;
+}
