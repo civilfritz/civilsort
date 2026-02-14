@@ -708,6 +708,11 @@ input:focus-visible,
 
 /* Responsive breakpoints for narrow viewports */
 @media (max-width: 600px) {
+    /* Reduce top spacing on home page for mobile */
+    .home {
+        padding-top: 20px;
+    }
+
     /* Stack ballot header on narrow screens */
     .ballot-header {
         flex-wrap: wrap;
