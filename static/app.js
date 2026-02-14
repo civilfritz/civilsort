@@ -82,14 +82,67 @@ if (location.hash) {
     }
 }
 
-// Confirm before deleting items
+// Add item via fetch (no page reload)
+const addItemForm = document.querySelector('.add-item-form');
+if (addItemForm) {
+    addItemForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const input = addItemForm.querySelector('input[name="name"]');
+        const name = input.value.trim();
+        if (!name) return;
+
+        const submitBtn = addItemForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+
+        fetch(addItemForm.action, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `name=${encodeURIComponent(name)}`
+        }).then(response => {
+            if (!response.ok) {
+                return response.text().then(text => {
+                    throw new Error(text || 'Failed to add item');
+                });
+            }
+            // Success: clear input. WebSocket broadcast will add the item to DOM.
+            input.value = '';
+        }).catch(err => {
+            showError(err.message);
+        }).finally(() => {
+            submitBtn.disabled = false;
+            input.focus();
+        });
+    });
+}
+
+// Delete item via fetch (no page reload)
 document.addEventListener('submit', function(e) {
     if (!e.target.classList.contains('delete-form')) return;
+    e.preventDefault();
+
     const item = e.target.closest('.ranked-item');
     const name = item ? item.querySelector('.item-name').textContent.trim() : 'this item';
     if (!confirm('Are you sure you want to delete "' + name + '"?')) {
-        e.preventDefault();
+        return;
     }
+
+    const form = e.target;
+    const deleteBtn = form.querySelector('.delete-btn');
+    if (deleteBtn) deleteBtn.disabled = true;
+
+    fetch(form.action, {
+        method: 'POST',
+    }).then(response => {
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(text || 'Failed to delete item');
+            });
+        }
+        // Success: WebSocket broadcast will remove the item from DOM.
+    }).catch(err => {
+        showError(err.message);
+        if (deleteBtn) deleteBtn.disabled = false;
+    });
 });
 
 // Name input saving

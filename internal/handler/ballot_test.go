@@ -140,9 +140,9 @@ func TestHandleAddItem(t *testing.T) {
 
 	h.HandleAddItem(rec, req)
 
-	// Should redirect
-	if rec.Code != http.StatusSeeOther {
-		t.Errorf("Expected status 303, got %d", rec.Code)
+	// Should succeed
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("Expected status 204, got %d", rec.Code)
 	}
 
 	// Item should exist in database

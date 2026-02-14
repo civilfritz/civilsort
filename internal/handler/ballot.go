@@ -255,7 +255,7 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 	// Broadcast that items changed
 	h.broadcast(r.Context(), ballotID, "items_changed")
 
-	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // HandleDeleteItem deletes an item (only if the current user added it).
@@ -299,7 +299,7 @@ func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	// Broadcast that items changed
 	h.broadcast(r.Context(), ballotID, "items_changed")
 
-	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // HandleSaveRankings saves the user's ranking (JSON API).
