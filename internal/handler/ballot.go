@@ -40,20 +40,25 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Creator is automatically the first participant
-	if err := h.addParticipant(r.Context(), ballotID, userID); err != nil {
+	participantID, _, err := h.addParticipant(r.Context(), ballotID, userID)
+	if err != nil {
 		log.Printf("Error adding creator as participant: %v", err)
-		// Non-fatal: they'll be added when they visit the ballot page
+		// Non-fatal: redirect to base URL and they'll be added when they visit
+		http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+		return
 	}
 
-	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+	http.Redirect(w, r, "/ballot/"+ballotID+"/"+participantID, http.StatusSeeOther)
 }
 
 // HandleBallot shows the ballot page with items, ranking, and results.
+// Handles both /ballot/{id} and /ballot/{id}/{participantID} routes.
 func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
+	participantID := r.PathValue("participantID") // empty for base URL
 	userID := UserID(r.Context())
 
-	// Load ballot
+	// 1. Load ballot
 	var ballot model.Ballot
 	var isOpenInt int
 	err := h.db.QueryRowContext(r.Context(),
@@ -69,33 +74,62 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	}
 	ballot.IsOpen = isOpenInt == 1
 
-	// Check access
-	isParticipant, err := h.isParticipant(r.Context(), ballotID, userID)
-	if err != nil {
-		log.Printf("Error checking participant: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+	// 2. If participant URL with fresh cookie: adopt the identity
+	if participantID != "" && IsFreshCookie(r.Context()) {
+		var ownerID string
+		err := h.db.QueryRowContext(r.Context(),
+			"SELECT user_id FROM ballot_participants WHERE ballot_id = ? AND participant_id = ?",
+			ballotID, participantID).Scan(&ownerID)
+		if err == nil {
+			// Found the owner - set cookie and redirect to same URL
+			setCookie(w, ownerID)
+			http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+			return
+		}
+		// Not found: fall through to normal flow
 	}
 
-	if ballot.IsOpen {
-		// Open ballot: auto-add new visitors as participants
-		if !isParticipant {
-			if err := h.addParticipant(r.Context(), ballotID, userID); err != nil {
+	// 3. Check if current user is a participant
+	var currentParticipantID string
+	err = h.db.QueryRowContext(r.Context(),
+		"SELECT participant_id FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
+		ballotID, userID).Scan(&currentParticipantID)
+	isParticipant := (err == nil)
+
+	if isParticipant {
+		// User is a participant
+		// If URL doesn't match their participant ID, redirect
+		if participantID == "" || participantID != currentParticipantID {
+			http.Redirect(w, r, "/ballot/"+ballotID+"/"+currentParticipantID, http.StatusSeeOther)
+			return
+		}
+		// URLs match - proceed to render
+	} else {
+		// User is NOT a participant
+		if ballot.IsOpen {
+			// Add participant and redirect
+			newParticipantID, isNew, err := h.addParticipant(r.Context(), ballotID, userID)
+			if err != nil {
 				log.Printf("Error adding participant: %v", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return
 			}
-		}
-	} else {
-		// Closed ballot: only existing participants allowed
-		if !isParticipant {
+			// Broadcast to other participants that a new participant joined
+			if isNew {
+				h.broadcastParticipantsChanged(r.Context(), ballotID)
+			}
+			http.Redirect(w, r, "/ballot/"+ballotID+"/"+newParticipantID, http.StatusSeeOther)
+			return
+		} else {
+			// Ballot is closed
 			w.WriteHeader(http.StatusForbidden)
 			h.templates.ExecuteTemplate(w, "closed.html", nil)
 			return
 		}
 	}
 
-	// Get all items
+	// 4. Render ballot
+	// Get all items with display names
 	items, err := h.getItems(r.Context(), ballotID)
 	if err != nil {
 		log.Printf("Error fetching items: %v", err)
@@ -145,15 +179,26 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get participant count
-	var participantCount int
-	err = h.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM ballot_participants WHERE ballot_id = ?",
-		ballotID).Scan(&participantCount)
+	// Get participants
+	participants, err := h.getParticipants(r.Context(), ballotID)
 	if err != nil {
-		log.Printf("Error counting participants: %v", err)
+		log.Printf("Error fetching participants: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Get current user's display name for this ballot
+	var displayName string
+	h.db.QueryRowContext(r.Context(),
+		"SELECT display_name FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
+		ballotID, userID).Scan(&displayName)
+
+	// Count anonymous participants
+	anonymousCount := 0
+	for _, p := range participants {
+		if p.DisplayName == "" {
+			anonymousCount++
+		}
 	}
 
 	data := map[string]interface{}{
@@ -163,7 +208,11 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		"CurrentUser":      userID,
 		"Results":          results,
 		"IsOpen":           ballot.IsOpen,
-		"ParticipantCount": participantCount,
+		"ParticipantCount": len(participants),
+		"ParticipantID":    currentParticipantID,
+		"Participants":     participants,
+		"DisplayName":      displayName,
+		"AnonymousCount":   anonymousCount,
 	}
 
 	if err := h.templates.ExecuteTemplate(w, "ballot.html", data); err != nil {
@@ -362,6 +411,44 @@ func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleSetName sets the display name for the current user.
+func (h *Handler) HandleSetName(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	userID := UserID(r.Context())
+
+	// Verify user is a participant
+	isParticipant, err := h.isParticipant(r.Context(), ballotID, userID)
+	if err != nil || !isParticipant {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	displayName := r.FormValue("name")
+	// Trim and limit length
+	if len(displayName) > 50 {
+		displayName = displayName[:50]
+	}
+
+	_, err = h.db.ExecContext(r.Context(),
+		"UPDATE ballot_participants SET display_name = ? WHERE ballot_id = ? AND user_id = ?",
+		displayName, ballotID, userID)
+	if err != nil {
+		log.Printf("Error updating display name: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Broadcast participants_changed message
+	h.broadcastParticipantsChanged(r.Context(), ballotID)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // broadcastStateChange broadcasts a ballot open/closed state change to all WebSocket clients.
 func (h *Handler) broadcastStateChange(ballotID string, isOpen bool) {
 	msg := map[string]interface{}{
@@ -387,12 +474,34 @@ func (h *Handler) isParticipant(ctx context.Context, ballotID, userID string) (b
 	return exists, err
 }
 
-// addParticipant records a user as an authorized participant (idempotent).
-func (h *Handler) addParticipant(ctx context.Context, ballotID, userID string) error {
-	_, err := h.db.ExecContext(ctx,
-		"INSERT OR IGNORE INTO ballot_participants (ballot_id, user_id) VALUES (?, ?)",
-		ballotID, userID)
-	return err
+// addParticipant records a user as an authorized participant and returns their participant ID.
+func (h *Handler) addParticipant(ctx context.Context, ballotID, userID string) (string, bool, error) {
+	participantID := generateParticipantID()
+	result, err := h.db.ExecContext(ctx,
+		"INSERT OR IGNORE INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
+		ballotID, userID, participantID)
+	if err != nil {
+		return "", false, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return "", false, err
+	}
+
+	isNew := rowsAffected > 0
+
+	// If the insert was ignored (already exists), fetch the existing participant_id
+	if !isNew {
+		err = h.db.QueryRowContext(ctx,
+			"SELECT participant_id FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
+			ballotID, userID).Scan(&participantID)
+		if err != nil {
+			return "", false, err
+		}
+	}
+
+	return participantID, isNew, nil
 }
 
 // checkBallotAccess verifies the user can access the ballot.
@@ -426,10 +535,13 @@ func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ball
 	if ballot.IsOpen {
 		// Open ballot: auto-add new visitors as participants
 		if !isParticipant {
-			if err := h.addParticipant(r.Context(), ballotID, userID); err != nil {
+			if _, isNew, err := h.addParticipant(r.Context(), ballotID, userID); err != nil {
 				log.Printf("Error adding participant: %v", err)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
 				return nil
+			} else if isNew {
+				// Broadcast to other participants that a new participant joined
+				h.broadcastParticipantsChanged(r.Context(), ballotID)
 			}
 		}
 		return &ballot
@@ -443,10 +555,14 @@ func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ball
 	return &ballot
 }
 
-// getItems retrieves all items for a ballot.
+// getItems retrieves all items for a ballot with display names.
 func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, error) {
 	rows, err := h.db.QueryContext(ctx,
-		"SELECT id, ballot_id, name, added_by, created_at FROM items WHERE ballot_id = ? ORDER BY id",
+		`SELECT i.id, i.ballot_id, i.name, i.added_by, i.created_at, COALESCE(bp.display_name, '')
+		 FROM items i
+		 LEFT JOIN ballot_participants bp ON i.ballot_id = bp.ballot_id AND i.added_by = bp.user_id
+		 WHERE i.ballot_id = ?
+		 ORDER BY i.id`,
 		ballotID)
 	if err != nil {
 		return nil, err
@@ -456,12 +572,36 @@ func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, 
 	var items []model.Item
 	for rows.Next() {
 		var item model.Item
-		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt, &item.AddedByName); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// getParticipants retrieves all participants for a ballot with their display names.
+func (h *Handler) getParticipants(ctx context.Context, ballotID string) ([]model.Participant, error) {
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT participant_id, display_name
+		 FROM ballot_participants
+		 WHERE ballot_id = ?
+		 ORDER BY created_at`,
+		ballotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var participants []model.Participant
+	for rows.Next() {
+		var p model.Participant
+		if err := rows.Scan(&p.ParticipantID, &p.DisplayName); err != nil {
+			return nil, err
+		}
+		participants = append(participants, p)
+	}
+	return participants, rows.Err()
 }
 
 // getRankings retrieves all rankings for a user on a ballot.
@@ -493,16 +633,25 @@ type ResultEntry struct {
 
 // ItemEntry represents an item for client-side rendering.
 type ItemEntry struct {
-	ID      int64  `json:"id"`
-	Name    string `json:"name"`
-	AddedBy string `json:"addedBy"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	AddedBy     string `json:"addedBy"`
+	AddedByName string `json:"addedByName"`
+}
+
+// ParticipantEntry represents a participant for client-side rendering.
+type ParticipantEntry struct {
+	DisplayName   string `json:"displayName"`
+	ParticipantID string `json:"participantId"`
 }
 
 // BroadcastMessage wraps the WebSocket payload with a message type.
 type BroadcastMessage struct {
-	Type    string        `json:"type"`
-	Results []ResultEntry `json:"results"`
-	Items   []ItemEntry   `json:"items,omitempty"`
+	Type             string             `json:"type"`
+	Results          []ResultEntry      `json:"results"`
+	Items            []ItemEntry        `json:"items,omitempty"`
+	Participants     []ParticipantEntry `json:"participants,omitempty"`
+	ParticipantCount int                `json:"participantCount,omitempty"`
 }
 
 // computeResults computes the Schulze ranking for a ballot.
@@ -586,9 +735,16 @@ func (h *Handler) broadcast(ctx context.Context, ballotID, messageType string) {
 		return
 	}
 
+	participants, err := h.getParticipants(ctx, ballotID)
+	if err != nil {
+		log.Printf("Error getting participants for broadcast: %v", err)
+		return
+	}
+
 	msg := BroadcastMessage{
-		Type:    messageType,
-		Results: results,
+		Type:             messageType,
+		Results:          results,
+		ParticipantCount: len(participants),
 	}
 
 	// Include item list for items_changed messages
@@ -596,9 +752,10 @@ func (h *Handler) broadcast(ctx context.Context, ballotID, messageType string) {
 		itemEntries := make([]ItemEntry, len(items))
 		for i, item := range items {
 			itemEntries[i] = ItemEntry{
-				ID:      item.ID,
-				Name:    item.Name,
-				AddedBy: item.AddedBy,
+				ID:          item.ID,
+				Name:        item.Name,
+				AddedBy:     item.AddedBy,
+				AddedByName: item.AddedByName,
 			}
 		}
 		msg.Items = itemEntries
@@ -607,6 +764,61 @@ func (h *Handler) broadcast(ctx context.Context, ballotID, messageType string) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("Error marshaling message for broadcast: %v", err)
+		return
+	}
+
+	h.hub.Broadcast(ballotID, data)
+}
+
+// broadcastParticipantsChanged broadcasts a participants_changed message with updated participant list and items.
+func (h *Handler) broadcastParticipantsChanged(ctx context.Context, ballotID string) {
+	items, err := h.getItems(ctx, ballotID)
+	if err != nil {
+		log.Printf("Error getting items for broadcast: %v", err)
+		return
+	}
+
+	results, err := h.computeResults(ctx, ballotID, items)
+	if err != nil {
+		log.Printf("Error computing results for broadcast: %v", err)
+		return
+	}
+
+	participants, err := h.getParticipants(ctx, ballotID)
+	if err != nil {
+		log.Printf("Error getting participants for broadcast: %v", err)
+		return
+	}
+
+	itemEntries := make([]ItemEntry, len(items))
+	for i, item := range items {
+		itemEntries[i] = ItemEntry{
+			ID:          item.ID,
+			Name:        item.Name,
+			AddedBy:     item.AddedBy,
+			AddedByName: item.AddedByName,
+		}
+	}
+
+	participantEntries := make([]ParticipantEntry, len(participants))
+	for i, p := range participants {
+		participantEntries[i] = ParticipantEntry{
+			DisplayName:   p.DisplayName,
+			ParticipantID: p.ParticipantID,
+		}
+	}
+
+	msg := BroadcastMessage{
+		Type:             "participants_changed",
+		Results:          results,
+		Items:            itemEntries,
+		Participants:     participantEntries,
+		ParticipantCount: len(participants),
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling participants_changed for broadcast: %v", err)
 		return
 	}
 

@@ -263,20 +263,6 @@ h2 {
     font-weight: 500;
 }
 
-/* Inline actions within ranked items */
-.item-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: auto;
-}
-
-.item-owner-label {
-    font-size: 13px;
-    color: var(--text-muted);
-    font-style: italic;
-}
-
 .delete-form {
     display: inline;
     margin: 0;
@@ -510,10 +496,103 @@ h2 {
     text-decoration: none;
 }
 
-/* Participant count */
+/* Name input row */
+.your-name-row {
+    margin: 8px 0 12px;
+    text-align: center;
+}
+
+.your-name-row input {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 14px;
+    background: var(--bg-surface-alt);
+    color: var(--text);
+    text-align: center;
+    width: 250px;
+    max-width: 100%;
+}
+
+.your-name-row input:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+    background: var(--bg-surface);
+}
+
+/* Participant info and popup */
+.participant-info {
+    position: relative;
+    text-align: center;
+    margin: 0 0 16px;
+}
+
 .participant-count {
     font-size: 13px;
     color: var(--text-subtle);
-    margin: 12px 0 16px;
-    text-align: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.participant-count:hover {
+    background: var(--bg-surface-alt);
+    color: var(--text);
+}
+
+.ballot .participant-list {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 0;
+    margin-top: 4px;
+    min-width: 150px;
+    max-height: 200px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px var(--shadow);
+    z-index: 100;
+    list-style: none;
+}
+
+.ballot .participant-list li {
+    padding: 6px 16px;
+    color: var(--text);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.ballot .participant-list li:hover {
+    background: var(--bg-surface-alt);
+}
+
+.ballot .participant-list .anonymous-label {
+    color: var(--text-subtle);
+    font-style: italic;
+}
+
+.ballot .participant-list .anonymous-label:hover {
+    background: transparent;
+    cursor: default;
+}
+
+/* Item meta container */
+.item-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+/* Item attribution */
+.item-attribution {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
 }

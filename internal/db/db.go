@@ -1,7 +1,9 @@
 package db
 
 import (
+	cryptoRand "crypto/rand"
 	"database/sql"
+	"math/big"
 	"strings"
 	_ "modernc.org/sqlite"
 )
@@ -82,6 +84,9 @@ func migrate(db *sql.DB) error {
 			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
 			PRIMARY KEY (ballot_id, user_id)
 		)`,
+		`ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE ballot_participants ADD COLUMN participant_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE ballot_participants ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
 	}
 
 	for _, m := range migrations {
@@ -93,5 +98,78 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// Backfill participant_id for existing rows BEFORE creating the unique index
+	if err := backfillParticipantIDs(db); err != nil {
+		return err
+	}
+
+	// Create index for participant_id lookups (after backfill ensures no empty values)
+	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_bp_participant ON ballot_participants(ballot_id, participant_id) WHERE participant_id != ''`)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return err
+	}
+
 	return nil
+}
+
+// backfillParticipantIDs generates participant IDs for existing ballot_participants rows
+func backfillParticipantIDs(db *sql.DB) error {
+	rows, err := db.Query(`SELECT ballot_id, user_id FROM ballot_participants WHERE participant_id = ''`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type participant struct {
+		ballotID string
+		userID   string
+	}
+
+	var participants []participant
+	for rows.Next() {
+		var p participant
+		if err := rows.Scan(&p.ballotID, &p.userID); err != nil {
+			return err
+		}
+		participants = append(participants, p)
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// Update each row with a generated participant_id
+	stmt, err := db.Prepare(`UPDATE ballot_participants SET participant_id = ? WHERE ballot_id = ? AND user_id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, p := range participants {
+		participantID := generateShortID()
+		if _, err := stmt.Exec(participantID, p.ballotID, p.userID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// generateShortID generates an 8-character alphanumeric ID
+func generateShortID() string {
+	const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	b := make([]byte, 8)
+	for i := range b {
+		b[i] = charset[randomInt(len(charset))]
+	}
+	return string(b)
+}
+
+// randomInt returns a random int in [0, max)
+func randomInt(max int) int {
+	n, err := cryptoRand.Int(cryptoRand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		panic(err)
+	}
+	return int(n.Int64())
 }

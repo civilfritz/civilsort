@@ -15,17 +15,20 @@ const cookieName = "voter_id"
 type contextKey string
 
 const userIDKey contextKey = "userID"
+const freshCookieKey contextKey = "freshCookie"
 
 // UserMiddleware ensures every request has a user ID.
 // If the voter_id cookie doesn't exist, it creates a new user and sets the cookie.
 func (h *Handler) UserMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var userID string
+		var fresh bool
 
 		cookie, err := r.Cookie(cookieName)
 		if err != nil || cookie.Value == "" {
 			// Generate new user
 			userID = generateUUID()
+			fresh = true
 
 			// Insert into users table
 			_, err := h.db.ExecContext(r.Context(), "INSERT OR IGNORE INTO users (id) VALUES (?)", userID)
@@ -35,14 +38,7 @@ func (h *Handler) UserMiddleware(next http.Handler) http.Handler {
 				return
 			}
 
-			http.SetCookie(w, &http.Cookie{
-				Name:     cookieName,
-				Value:    userID,
-				Path:     "/",
-				MaxAge:   365 * 24 * 60 * 60, // 1 year
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
+			setCookie(w, userID)
 		} else {
 			userID = cookie.Value
 
@@ -52,19 +48,16 @@ func (h *Handler) UserMiddleware(next http.Handler) http.Handler {
 			if err != nil || !exists {
 				// Cookie exists but user doesn't - treat as new user
 				userID = generateUUID()
+				fresh = true
 				h.db.ExecContext(r.Context(), "INSERT OR IGNORE INTO users (id) VALUES (?)", userID)
-				http.SetCookie(w, &http.Cookie{
-					Name:     cookieName,
-					Value:    userID,
-					Path:     "/",
-					MaxAge:   365 * 24 * 60 * 60,
-					HttpOnly: true,
-					SameSite: http.SameSiteLaxMode,
-				})
+				setCookie(w, userID)
+			} else {
+				fresh = false
 			}
 		}
 
 		ctx := context.WithValue(r.Context(), userIDKey, userID)
+		ctx = context.WithValue(ctx, freshCookieKey, fresh)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -75,6 +68,26 @@ func UserID(ctx context.Context) string {
 		return id
 	}
 	return ""
+}
+
+// IsFreshCookie returns true if this request resulted in creating a new cookie/user.
+func IsFreshCookie(ctx context.Context) bool {
+	if fresh, ok := ctx.Value(freshCookieKey).(bool); ok {
+		return fresh
+	}
+	return false
+}
+
+// setCookie sets the voter_id cookie with standard parameters.
+func setCookie(w http.ResponseWriter, userID string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    userID,
+		Path:     "/",
+		MaxAge:   365 * 24 * 60 * 60, // 1 year
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 // generateUUID generates a UUID v4.
@@ -92,6 +105,16 @@ func generateUUID() string {
 
 // generateBallotID generates a short random ID for URLs.
 func generateBallotID() string {
+	return generateShortID()
+}
+
+// generateParticipantID generates a short random ID for participant URLs.
+func generateParticipantID() string {
+	return generateShortID()
+}
+
+// generateShortID generates an 8-character alphanumeric ID.
+func generateShortID() string {
 	const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	b := make([]byte, 8)
 	for i := range b {

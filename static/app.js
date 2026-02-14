@@ -34,6 +34,48 @@ document.addEventListener('submit', function(e) {
     }
 });
 
+// Name input saving
+const displayNameInput = document.getElementById('display-name');
+if (displayNameInput) {
+    function saveDisplayName() {
+        const name = displayNameInput.value.trim();
+        fetch(`/ballot/${ballotId}/name`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `name=${encodeURIComponent(name)}`
+        }).catch(err => {
+            console.error('Error saving name:', err);
+        });
+    }
+
+    displayNameInput.addEventListener('blur', saveDisplayName);
+    displayNameInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveDisplayName();
+            displayNameInput.blur();
+        }
+    });
+}
+
+// Participant list toggle
+const participantToggle = document.getElementById('participant-toggle');
+const participantList = document.getElementById('participant-list');
+if (participantToggle && participantList) {
+    participantToggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const isVisible = participantList.style.display !== 'none';
+        participantList.style.display = isVisible ? 'none' : 'block';
+    });
+
+    // Close participant list when clicking elsewhere
+    document.addEventListener('click', function(e) {
+        if (!participantList.contains(e.target) && e.target !== participantToggle) {
+            participantList.style.display = 'none';
+        }
+    });
+}
+
 // Drag-and-drop ranking with two zones
 const rankedList = document.getElementById('ranked-list');
 const unrankedList = document.getElementById('unranked-list');
@@ -77,12 +119,24 @@ function connectWebSocket() {
             if (msg.type === 'items_changed') {
                 // Items added or deleted - update DOM in-place
                 updateItems(msg);
+                if (msg.participantCount !== undefined) {
+                    updateParticipantCount(msg.participantCount);
+                }
             } else if (msg.type === 'results') {
                 // Ranking changed - update results tab in-place
                 updateResultsList(msg.results);
+                if (msg.participantCount !== undefined) {
+                    updateParticipantCount(msg.participantCount);
+                }
             } else if (msg.type === 'state_changed') {
                 // Ballot state changed - update toggle UI
                 updateToggleUI(msg.isOpen);
+            } else if (msg.type === 'participants_changed') {
+                // Participants or names changed - update everything
+                updateItems(msg);
+                updateResultsList(msg.results);
+                updateParticipantCount(msg.participantCount);
+                updateParticipantList(msg.participants);
             }
         } catch (err) {
             console.error('Error parsing message:', err);
@@ -126,6 +180,29 @@ function updateItems(msg) {
         }
     });
 
+    // Update attribution for existing items
+    [...rankedItems, ...unrankedItems].forEach(li => {
+        const itemId = parseInt(li.dataset.itemId);
+        const item = newItemsById.get(itemId);
+        if (item) {
+            const metaSpan = li.querySelector('.item-meta');
+            if (metaSpan) {
+                // Update attribution span
+                let attrSpan = metaSpan.querySelector('.item-attribution');
+                if (item.addedByName) {
+                    if (!attrSpan) {
+                        attrSpan = document.createElement('span');
+                        attrSpan.className = 'item-attribution';
+                        metaSpan.insertBefore(attrSpan, metaSpan.firstChild);
+                    }
+                    attrSpan.textContent = item.addedByName;
+                } else if (attrSpan) {
+                    attrSpan.remove();
+                }
+            }
+        }
+    });
+
     // Add new items to unranked zone
     msg.items.forEach(item => {
         if (!existingIds.has(item.id)) {
@@ -136,19 +213,27 @@ function updateItems(msg) {
             li.innerHTML = `
                 <span class="drag-handle">☰</span>
                 <span class="item-name">${escapeHtml(item.name)}</span>
+                <span class="item-meta"></span>
             `;
 
-            // Add "added by you" and delete button if current user owns it
+            const metaSpan = li.querySelector('.item-meta');
+
+            // Add attribution if available
+            if (item.addedByName) {
+                const attrSpan = document.createElement('span');
+                attrSpan.className = 'item-attribution';
+                attrSpan.textContent = item.addedByName;
+                metaSpan.appendChild(attrSpan);
+            }
+
+            // Add delete button if current user owns it
             if (item.addedBy === currentUserId) {
-                const actionsSpan = document.createElement('span');
-                actionsSpan.className = 'item-actions';
-                actionsSpan.innerHTML = `
-                    <span class="item-owner-label">added by you</span>
-                    <form method="POST" action="/ballot/${ballotId}/items/${item.id}/delete" class="delete-form">
-                        <button type="submit" class="delete-btn">Delete</button>
-                    </form>
-                `;
-                li.appendChild(actionsSpan);
+                const deleteForm = document.createElement('form');
+                deleteForm.method = 'POST';
+                deleteForm.action = `/ballot/${ballotId}/items/${item.id}/delete`;
+                deleteForm.className = 'delete-form';
+                deleteForm.innerHTML = `<button type="submit" class="delete-btn">Delete</button>`;
+                metaSpan.appendChild(deleteForm);
             }
 
             unrankedList.appendChild(li);
@@ -180,11 +265,43 @@ function updateResultsList(results) {
     }
 
     list.innerHTML = '';
-    results.forEach((entry, i) => {
+    results.forEach((entry) => {
         const li = document.createElement('li');
         li.textContent = `#${entry.rank}: ${entry.name}`;
         list.appendChild(li);
     });
+}
+
+function updateParticipantCount(count) {
+    const toggle = document.getElementById('participant-toggle');
+    if (toggle) {
+        toggle.textContent = count === 1 ? '1 participant' : `${count} participants`;
+    }
+}
+
+function updateParticipantList(participants) {
+    const list = document.getElementById('participant-list');
+    if (!list) return;
+
+    list.innerHTML = '';
+    let anonymousCount = 0;
+
+    participants.forEach(p => {
+        if (p.displayName) {
+            const li = document.createElement('li');
+            li.textContent = p.displayName;
+            list.appendChild(li);
+        } else {
+            anonymousCount++;
+        }
+    });
+
+    if (anonymousCount > 0) {
+        const li = document.createElement('li');
+        li.className = 'anonymous-label';
+        li.textContent = anonymousCount === 1 ? '1 anonymous' : `${anonymousCount} anonymous`;
+        list.appendChild(li);
+    }
 }
 
 // Connect WebSocket when page loads

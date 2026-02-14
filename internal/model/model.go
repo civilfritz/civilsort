@@ -4,8 +4,9 @@ import "time"
 
 // User represents a participant identified by a browser cookie.
 type User struct {
-	ID        string
-	CreatedAt time.Time
+	ID          string
+	DisplayName string
+	CreatedAt   time.Time
 }
 
 // Ballot represents a voting session.
@@ -19,11 +20,12 @@ type Ballot struct {
 
 // Item represents a candidate option on a ballot.
 type Item struct {
-	ID        int64
-	BallotID  string
-	Name      string
-	AddedBy   string
-	CreatedAt time.Time
+	ID          int64
+	BallotID    string
+	Name        string
+	AddedBy     string
+	AddedByName string
+	CreatedAt   time.Time
 }
 
 // Ranking represents one user's ranking of one item.
@@ -32,4 +34,10 @@ type Ranking struct {
 	UserID   string
 	ItemID   int64
 	Position int // 1 = most preferred
+}
+
+// Participant represents a ballot participant with their display name and ID.
+type Participant struct {
+	DisplayName   string
+	ParticipantID string
 }

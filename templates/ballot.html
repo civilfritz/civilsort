@@ -34,7 +34,25 @@
         </div>
     </div>
 
-    <p class="participant-count">{{if eq .ParticipantCount 1}}1 participant{{else}}{{.ParticipantCount}} participants{{end}}</p>
+    <div class="your-name-row">
+        <input type="text" id="display-name" placeholder="Your name (optional)" maxlength="50" value="{{.DisplayName}}" autocomplete="off">
+    </div>
+
+    <div class="participant-info">
+        <button type="button" class="participant-count" id="participant-toggle">
+            {{if eq .ParticipantCount 1}}1 participant{{else}}{{.ParticipantCount}} participants{{end}}
+        </button>
+        <ul class="participant-list" id="participant-list" style="display:none;">
+            {{range .Participants}}
+                {{if .DisplayName}}
+                    <li>{{.DisplayName}}</li>
+                {{end}}
+            {{end}}
+            {{if gt .AnonymousCount 0}}
+                <li class="anonymous-label">{{if eq .AnonymousCount 1}}1 anonymous{{else}}{{.AnonymousCount}} anonymous{{end}}</li>
+            {{end}}
+        </ul>
+    </div>
 
     <div class="tabs">
         <button class="tab-btn active" data-tab="ballot-tab">Ballot</button>
@@ -50,14 +68,16 @@
             <li data-item-id="{{.ID}}" class="ranked-item">
                 <span class="drag-handle">☰</span>
                 <span class="item-name">{{.Name}}</span>
-                {{if eq .AddedBy $.CurrentUser}}
-                <span class="item-actions">
-                    <span class="item-owner-label">added by you</span>
-                    <form method="POST" action="/ballot/{{$.Ballot.ID}}/items/{{.ID}}/delete" class="delete-form">
-                        <button type="submit" class="delete-btn">Delete</button>
-                    </form>
+                <span class="item-meta">
+                    {{if .AddedByName}}
+                        <span class="item-attribution">{{.AddedByName}}</span>
+                    {{end}}
+                    {{if eq .AddedBy $.CurrentUser}}
+                        <form method="POST" action="/ballot/{{$.Ballot.ID}}/items/{{.ID}}/delete" class="delete-form">
+                            <button type="submit" class="delete-btn">Delete</button>
+                        </form>
+                    {{end}}
                 </span>
-                {{end}}
             </li>
             {{end}}
         </ul>
@@ -68,14 +88,16 @@
             <li data-item-id="{{.ID}}" class="ranked-item">
                 <span class="drag-handle">☰</span>
                 <span class="item-name">{{.Name}}</span>
-                {{if eq .AddedBy $.CurrentUser}}
-                <span class="item-actions">
-                    <span class="item-owner-label">added by you</span>
-                    <form method="POST" action="/ballot/{{$.Ballot.ID}}/items/{{.ID}}/delete" class="delete-form">
-                        <button type="submit" class="delete-btn">Delete</button>
-                    </form>
+                <span class="item-meta">
+                    {{if .AddedByName}}
+                        <span class="item-attribution">{{.AddedByName}}</span>
+                    {{end}}
+                    {{if eq .AddedBy $.CurrentUser}}
+                        <form method="POST" action="/ballot/{{$.Ballot.ID}}/items/{{.ID}}/delete" class="delete-form">
+                            <button type="submit" class="delete-btn">Delete</button>
+                        </form>
+                    {{end}}
                 </span>
-                {{end}}
             </li>
             {{end}}
         </ul>
