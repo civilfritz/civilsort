@@ -1,0 +1,15 @@
+[Unit]
+Description=civilsort ranked-choice voting server
+After=network.target
+
+[Service]
+Type=simple
+User=civilsort
+Group=civilsort
+EnvironmentFile=-/etc/default/civilsort
+ExecStart=/usr/bin/civilsort
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

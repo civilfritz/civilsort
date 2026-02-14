@@ -1,0 +1,7 @@
+Package: civilsort
+Version: VERSION_PLACEHOLDER
+Architecture: amd64
+Maintainer: Jonathon Anderson
+Description: Ranked-choice voting server using the Schulze method
+ A web-based ranked-choice voting application that uses the Schulze
+ method to determine consensus from participant rankings.

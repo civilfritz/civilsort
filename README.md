@@ -130,8 +130,28 @@ Command-line flags:
 ./civilsort -addr :8080 -db civilsort.db
 ```
 
-- `-addr`: Listen address (default: `:8080`)
-- `-db`: SQLite database path (default: `civilsort.db`)
+| Flag | Default | Env Var | Description |
+|------|---------|---------|-------------|
+| `-addr` | `:8080` | `CIVILSORT_ADDR` | Listen address |
+| `-db` | `civilsort.db` | `CIVILSORT_DB` | SQLite database path |
+
+Environment variables are overridden by command-line flags.
+
+## Debian Package
+
+Build a `.deb` package:
+```bash
+make deb
+```
+
+Install:
+```bash
+sudo dpkg -i dist/civilsort_*.deb
+sudo systemctl enable --now civilsort
+```
+
+Configuration: `/etc/default/civilsort`
+Database: `/var/lib/civilsort/civilsort.db`
 
 ## Database Schema
 

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+# Create system user if it doesn't exist
+if ! getent passwd civilsort >/dev/null 2>&1; then
+    adduser --system --group --no-create-home --home /var/lib/civilsort civilsort
+fi
+
+# Create data directory
+mkdir -p /var/lib/civilsort
+chown civilsort:civilsort /var/lib/civilsort

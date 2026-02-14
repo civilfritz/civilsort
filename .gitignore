@@ -62,3 +62,6 @@ Thumbs.db
 # Backup files
 *.bak
 *.backup
+
+# Build artifacts
+/dist/
