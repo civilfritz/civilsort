@@ -153,6 +153,52 @@ sudo systemctl enable --now civilsort
 Configuration: `/etc/default/civilsort`
 Database: `/var/lib/civilsort/civilsort.db`
 
+## Reverse Proxy with Caddy
+
+Example Caddyfile configuration for HTTPS deployment:
+
+```caddy
+vote.example.com {
+    reverse_proxy localhost:8080
+}
+```
+
+For a more complete configuration with logging and WebSocket support:
+
+```caddy
+vote.example.com {
+    # Reverse proxy to civilsort
+    reverse_proxy localhost:8080 {
+        # WebSocket support (automatically detected by Caddy)
+        flush_interval -1
+    }
+
+    # Access logging
+    log {
+        output file /var/log/caddy/civilsort.log
+        format json
+    }
+
+    # Security headers
+    header {
+        # Enable HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Prevent clickjacking
+        X-Frame-Options "SAMEORIGIN"
+        # XSS protection
+        X-Content-Type-Options "nosniff"
+        # Remove server info
+        -Server
+    }
+}
+```
+
+Caddy automatically handles:
+- HTTPS certificate provisioning via Let's Encrypt
+- HTTP to HTTPS redirects
+- WebSocket upgrades
+- HTTP/2 and HTTP/3 support
+
 ## Database Schema
 
 ```sql
