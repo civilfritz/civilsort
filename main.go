@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/civilfritz/civilsort/internal/db"
 	"github.com/civilfritz/civilsort/internal/handler"
@@ -20,12 +21,23 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 func main() {
-	addr := flag.String("addr", ":8080", "listen address")
-	dbPath := flag.String("db", "civilsort.db", "SQLite database path")
+	var addr, dbPath string
+
+	addrDefault := ":8080"
+	if v := os.Getenv("CIVILSORT_ADDR"); v != "" {
+		addrDefault = v
+	}
+	flag.StringVar(&addr, "addr", addrDefault, "listen address (env: CIVILSORT_ADDR)")
+
+	dbDefault := "civilsort.db"
+	if v := os.Getenv("CIVILSORT_DB"); v != "" {
+		dbDefault = v
+	}
+	flag.StringVar(&dbPath, "db", dbDefault, "SQLite database path (env: CIVILSORT_DB)")
 	flag.Parse()
 
 	// Open database
-	database, err := db.Open(*dbPath)
+	database, err := db.Open(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -56,6 +68,6 @@ func main() {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
 	// Start server
-	log.Printf("Listening on %s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, h.UserMiddleware(mux)))
+	log.Printf("Listening on %s", addr)
+	log.Fatal(http.ListenAndServe(addr, h.UserMiddleware(mux)))
 }
