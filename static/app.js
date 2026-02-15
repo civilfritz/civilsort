@@ -198,6 +198,8 @@ if (rankedList && unrankedList && typeof Sortable !== 'undefined') {
         group: 'ranking',
         animation: 150,
         ghostClass: 'sortable-ghost',
+        delay: 200,
+        delayOnTouchOnly: true,
         onEnd: function() {
             saveRanking();
         }
