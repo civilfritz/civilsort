@@ -581,12 +581,18 @@ func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, 
 }
 
 // getParticipants retrieves all participants for a ballot with their display names.
+// Only includes participants who have set a name, added an item, or ranked items.
 func (h *Handler) getParticipants(ctx context.Context, ballotID string) ([]model.Participant, error) {
 	rows, err := h.db.QueryContext(ctx,
-		`SELECT participant_id, display_name
-		 FROM ballot_participants
-		 WHERE ballot_id = ?
-		 ORDER BY created_at`,
+		`SELECT bp.participant_id, bp.display_name
+		 FROM ballot_participants bp
+		 WHERE bp.ballot_id = ?
+		 AND (
+		     bp.display_name != ''
+		     OR EXISTS (SELECT 1 FROM items WHERE ballot_id = bp.ballot_id AND added_by = bp.user_id)
+		     OR EXISTS (SELECT 1 FROM rankings WHERE ballot_id = bp.ballot_id AND user_id = bp.user_id)
+		 )
+		 ORDER BY bp.created_at`,
 		ballotID)
 	if err != nil {
 		return nil, err
