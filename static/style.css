@@ -372,6 +372,7 @@ h2 {
     cursor: pointer;
     font-size: 20px;
     line-height: 1;
+    color: var(--text);
     transition: background 0.2s;
 }
 
