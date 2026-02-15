@@ -632,6 +632,59 @@ h2 {
     cursor: default;
 }
 
+.ballot .participant-list .participant-name {
+    cursor: pointer;
+}
+
+.ballot .participant-list .participant-name:hover {
+    background: var(--bg-surface-alt);
+}
+
+.participant-rankings-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+}
+
+.participant-rankings-back {
+    background: none;
+    border: none;
+    color: var(--primary);
+    cursor: pointer;
+    font-size: 20px;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.participant-rankings-back:hover {
+    color: var(--primary-hover);
+}
+
+.participant-rankings-name {
+    font-weight: 500;
+    color: var(--text);
+    flex: 1;
+}
+
+.participant-rankings-item {
+    padding: 6px 16px;
+    color: var(--text);
+    font-size: 14px;
+    list-style: none;
+    text-align: left;
+}
+
+.participant-rankings-empty {
+    padding: 20px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 /* Error toast notification */
 .error-toast {
     position: fixed;

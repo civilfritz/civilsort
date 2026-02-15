@@ -830,3 +830,58 @@ func (h *Handler) broadcastParticipantsChanged(ctx context.Context, ballotID str
 
 	h.hub.Broadcast(ballotID, data)
 }
+
+// HandleGetRankings returns a participant's ranked items in order.
+func (h *Handler) HandleGetRankings(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	participantID := r.PathValue("participantID")
+
+	// Resolve participant_id to user_id
+	var userID string
+	err := h.db.QueryRowContext(r.Context(),
+		"SELECT user_id FROM ballot_participants WHERE ballot_id = ? AND participant_id = ?",
+		ballotID, participantID).Scan(&userID)
+	if err == sql.ErrNoRows {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		log.Printf("Error resolving participant: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get rankings for this user
+	rankings, err := h.getRankings(r.Context(), ballotID, userID)
+	if err != nil {
+		log.Printf("Error fetching rankings: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get all items to look up names
+	items, err := h.getItems(r.Context(), ballotID)
+	if err != nil {
+		log.Printf("Error fetching items: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Build item ID to name map
+	itemNames := make(map[int64]string)
+	for _, item := range items {
+		itemNames[item.ID] = item.Name
+	}
+
+	// Build ordered list of ranked item names
+	type RankedItem struct {
+		Name string `json:"name"`
+	}
+
+	rankedItems := make([]RankedItem, len(rankings))
+	for i, ranking := range rankings {
+		rankedItems[i] = RankedItem{Name: itemNames[ranking.ItemID]}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rankedItems)
+}

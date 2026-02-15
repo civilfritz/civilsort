@@ -50,7 +50,7 @@
         <ul class="participant-list" id="participant-list" style="display:none;">
             {{range .Participants}}
                 {{if .DisplayName}}
-                    <li>{{.DisplayName}}</li>
+                    <li class="participant-name" data-participant-id="{{.ParticipantID}}">{{.DisplayName}}</li>
                 {{end}}
             {{end}}
             {{if gt .AnonymousCount 0}}

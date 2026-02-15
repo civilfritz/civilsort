@@ -176,13 +176,23 @@ if (participantToggle && participantList) {
     participantToggle.addEventListener('click', function(e) {
         e.stopPropagation();
         const isVisible = participantList.style.display !== 'none';
-        participantList.style.display = isVisible ? 'none' : 'block';
-        participantToggle.setAttribute('aria-expanded', isVisible ? 'false' : 'true');
+        if (isVisible) {
+            // Closing - reset to participant list view
+            restoreParticipantList();
+            participantList.style.display = 'none';
+            participantToggle.setAttribute('aria-expanded', 'false');
+        } else {
+            // Opening - show it
+            participantList.style.display = 'block';
+            participantToggle.setAttribute('aria-expanded', 'true');
+        }
     });
 
     // Close participant list when clicking elsewhere
     document.addEventListener('click', function(e) {
         if (!participantList.contains(e.target) && e.target !== participantToggle) {
+            // Closing - reset to participant list view
+            restoreParticipantList();
             participantList.style.display = 'none';
             participantToggle.setAttribute('aria-expanded', 'false');
         }
@@ -252,11 +262,19 @@ function connectWebSocket() {
                 if (msg.participantCount !== undefined) {
                     updateParticipantCount(msg.participantCount);
                 }
+                // Refresh rankings view if watching someone
+                if (viewingParticipantId) {
+                    showParticipantRankings(viewingParticipantId, viewingParticipantName);
+                }
             } else if (msg.type === 'results') {
                 // Ranking changed - update results tab in-place
                 updateResultsList(msg.results);
                 if (msg.participantCount !== undefined) {
                     updateParticipantCount(msg.participantCount);
+                }
+                // Refresh rankings view if watching someone
+                if (viewingParticipantId) {
+                    showParticipantRankings(viewingParticipantId, viewingParticipantName);
                 }
             } else if (msg.type === 'state_changed') {
                 // Ballot state changed - update toggle UI
@@ -267,6 +285,10 @@ function connectWebSocket() {
                 updateResultsList(msg.results);
                 updateParticipantCount(msg.participantCount);
                 updateParticipantList(msg.participants);
+                // Refresh rankings view if watching someone
+                if (viewingParticipantId) {
+                    showParticipantRankings(viewingParticipantId, viewingParticipantName);
+                }
             }
         } catch (err) {
             console.error('Error parsing message:', err);
@@ -445,9 +467,42 @@ function updateParticipantCount(count) {
     }
 }
 
+// State for participant rankings view
+let viewingParticipantId = null;
+let viewingParticipantName = null;
+let cachedParticipants = null;
+
+// Initialize cachedParticipants from server-rendered HTML
+(function() {
+    const list = document.getElementById('participant-list');
+    if (!list) return;
+    const initial = [];
+    list.querySelectorAll('.participant-name').forEach(function(li) {
+        initial.push({
+            participantId: li.dataset.participantId,
+            displayName: li.textContent.trim()
+        });
+    });
+    const anonEl = list.querySelector('.anonymous-label');
+    if (anonEl) {
+        const m = anonEl.textContent.match(/(\d+)/);
+        const count = m ? parseInt(m[1], 10) : 1;
+        for (let i = 0; i < count; i++) {
+            initial.push({ participantId: '', displayName: '' });
+        }
+    }
+    cachedParticipants = initial;
+})();
+
 function updateParticipantList(participants) {
     const list = document.getElementById('participant-list');
     if (!list) return;
+
+    // Cache participants for later restore
+    cachedParticipants = participants;
+
+    // If currently viewing a specific participant's rankings, keep that view
+    if (viewingParticipantId) return;
 
     list.innerHTML = '';
     let anonymousCount = 0;
@@ -455,6 +510,8 @@ function updateParticipantList(participants) {
     participants.forEach(p => {
         if (p.displayName) {
             const li = document.createElement('li');
+            li.className = 'participant-name';
+            li.dataset.participantId = p.participantId;
             li.textContent = p.displayName;
             list.appendChild(li);
         } else {
@@ -468,6 +525,84 @@ function updateParticipantList(participants) {
         li.textContent = anonymousCount === 1 ? '1 anonymous' : `${anonymousCount} anonymous`;
         list.appendChild(li);
     }
+}
+
+function restoreParticipantList() {
+    viewingParticipantId = null;
+    viewingParticipantName = null;
+    if (cachedParticipants) {
+        updateParticipantList(cachedParticipants);
+    }
+}
+
+function showParticipantRankings(participantId, participantName) {
+    const list = document.getElementById('participant-list');
+    if (!list) return;
+
+    viewingParticipantId = participantId;
+    viewingParticipantName = participantName;
+
+    // Fetch rankings for this participant
+    fetch(`/ballot/${ballotId}/rankings/${participantId}`)
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch rankings');
+            return response.json();
+        })
+        .then(rankings => {
+            // Replace list content with rankings view
+            list.innerHTML = '';
+
+            // Header with back arrow button on left
+            const header = document.createElement('div');
+            header.className = 'participant-rankings-header';
+
+            const backBtn = document.createElement('button');
+            backBtn.className = 'participant-rankings-back';
+            backBtn.textContent = '←';
+            backBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                restoreParticipantList();
+            });
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'participant-rankings-name';
+            nameSpan.textContent = participantName;
+
+            header.appendChild(backBtn);
+            header.appendChild(nameSpan);
+            list.appendChild(header);
+
+            // Rankings list
+            if (rankings.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'participant-rankings-empty';
+                empty.textContent = 'No rankings yet';
+                list.appendChild(empty);
+            } else {
+                rankings.forEach((item, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'participant-rankings-item';
+                    li.textContent = `${index + 1}. ${item.name}`;
+                    list.appendChild(li);
+                });
+            }
+        })
+        .catch(err => {
+            showError('Failed to load rankings');
+        });
+}
+
+// Click handler for viewing participant rankings
+const participantListElement = document.getElementById('participant-list');
+if (participantListElement && typeof ballotId !== 'undefined') {
+    participantListElement.addEventListener('click', function(e) {
+        const target = e.target.closest('.participant-name');
+        if (!target) return;
+
+        const participantId = target.dataset.participantId;
+        const participantName = target.textContent;
+        showParticipantRankings(participantId, participantName);
+    });
 }
 
 // Connect WebSocket when page loads
