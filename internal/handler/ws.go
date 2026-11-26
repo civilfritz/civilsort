@@ -29,12 +29,8 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get or create ballot hub
-	ballotHub := h.hub.GetOrCreate(ballotID)
-
-	// Create client
-	client := hubpkg.NewClient(conn, ballotHub)
-	ballotHub.Register(client)
+	client := hubpkg.NewClient(conn, ballotID, h.hub)
+	h.hub.Register(client)
 
 	// Send current results immediately
 	if snap, err := h.snapshot(r.Context(), ballotID); err != nil {

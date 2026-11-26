@@ -9,168 +9,146 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Manager tracks all active ballot hubs.
+// sendBuffer is how many messages a client may fall behind before it is
+// disconnected as a slow consumer.
+const sendBuffer = 16
+
+// Manager tracks WebSocket clients per ballot and broadcasts to them.
+//
+// All client-set changes happen under one mutex, and a client's send channel
+// is closed only by whoever removes it from the set, so each channel is closed
+// exactly once and never sent to after closing.
 type Manager struct {
 	mu      sync.Mutex
-	ballots map[string]*BallotHub
+	ballots map[string]map[*Client]struct{}
+	closed  bool
 }
 
 // NewManager creates a new Manager.
 func NewManager() *Manager {
 	return &Manager{
-		ballots: make(map[string]*BallotHub),
+		ballots: make(map[string]map[*Client]struct{}),
 	}
 }
 
-// GetOrCreate returns the existing hub for a ballot, or creates a new one.
-func (m *Manager) GetOrCreate(ballotID string) *BallotHub {
+// Register adds a client to its ballot. After CloseAll, the client is closed
+// immediately instead.
+func (m *Manager) Register(c *Client) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if hub, ok := m.ballots[ballotID]; ok {
-		return hub
+	if m.closed {
+		close(c.send)
+		return
 	}
 
-	hub := &BallotHub{
-		ballotID:   ballotID,
-		manager:    m,
-		clients:    make(map[*Client]struct{}),
-		broadcast:  make(chan []byte, 10),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		done:       make(chan struct{}),
+	clients, ok := m.ballots[c.ballotID]
+	if !ok {
+		clients = make(map[*Client]struct{})
+		m.ballots[c.ballotID] = clients
 	}
-
-	go hub.run()
-	m.ballots[ballotID] = hub
-	return hub
+	clients[c] = struct{}{}
+	log.Printf("Client registered to ballot %s (%d total)", c.ballotID, len(clients))
 }
 
-// Broadcast sends a message to all clients on a ballot.
+// Unregister removes a client from its ballot. It is safe to call more than once.
+func (m *Manager) Unregister(c *Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.removeLocked(c) {
+		log.Printf("Client unregistered from ballot %s (%d remaining)", c.ballotID, len(m.ballots[c.ballotID]))
+	}
+}
+
+// Broadcast sends a message to all clients on a ballot, disconnecting any
+// client whose send buffer is full.
 func (m *Manager) Broadcast(ballotID string, data []byte) {
 	m.mu.Lock()
-	hub, ok := m.ballots[ballotID]
-	m.mu.Unlock()
+	defer m.mu.Unlock()
 
-	if ok {
-		select {
-		case hub.broadcast <- data:
-		case <-time.After(100 * time.Millisecond):
-			log.Printf("Broadcast to ballot %s timed out", ballotID)
-		}
+	for c := range m.ballots[ballotID] {
+		m.deliverLocked(c, data)
 	}
 }
 
-// remove removes a ballot hub from the manager.
-func (m *Manager) remove(ballotID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.ballots, ballotID)
-}
-
-// CloseAll closes all ballot hubs.
+// CloseAll disconnects every client and rejects future registrations.
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, hub := range m.ballots {
-		close(hub.done)
-	}
-}
-
-// BallotHub manages WebSocket clients for a single ballot.
-type BallotHub struct {
-	ballotID   string
-	manager    *Manager
-	clients    map[*Client]struct{}
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	done       chan struct{}
-}
-
-// run is the main loop for the ballot hub.
-func (hub *BallotHub) run() {
-	for {
-		select {
-		case client := <-hub.register:
-			hub.clients[client] = struct{}{}
-			log.Printf("Client registered to ballot %s (%d total)", hub.ballotID, len(hub.clients))
-
-		case client := <-hub.unregister:
-			if _, ok := hub.clients[client]; ok {
-				delete(hub.clients, client)
-				close(client.send)
-				log.Printf("Client unregistered from ballot %s (%d remaining)", hub.ballotID, len(hub.clients))
-			}
-
-			// If no clients left, shut down the hub
-			if len(hub.clients) == 0 {
-				hub.manager.remove(hub.ballotID)
-				log.Printf("Hub for ballot %s shut down (no clients)", hub.ballotID)
-				return
-			}
-
-		case message := <-hub.broadcast:
-			for client := range hub.clients {
-				select {
-				case client.send <- message:
-				default:
-					// Client's send buffer is full, disconnect it
-					delete(hub.clients, client)
-					close(client.send)
-					log.Printf("Client disconnected from ballot %s (slow consumer)", hub.ballotID)
-				}
-			}
-
-		case <-hub.done:
-			// Close all clients
-			for client := range hub.clients {
-				close(client.send)
-			}
-			log.Printf("Hub for ballot %s shut down (manager closed)", hub.ballotID)
-			return
+	m.closed = true
+	for _, clients := range m.ballots {
+		for c := range clients {
+			close(c.send)
 		}
 	}
+	clear(m.ballots)
 }
 
-// Register adds a client to the hub.
-func (hub *BallotHub) Register(client *Client) {
-	hub.register <- client
+// deliverLocked queues data for c if c is still registered. m.mu must be held.
+func (m *Manager) deliverLocked(c *Client, data []byte) {
+	if _, ok := m.ballots[c.ballotID][c]; !ok {
+		return
+	}
+	select {
+	case c.send <- data:
+	default:
+		m.removeLocked(c)
+		log.Printf("Client disconnected from ballot %s (slow consumer)", c.ballotID)
+	}
 }
 
-// Unregister removes a client from the hub.
-func (hub *BallotHub) Unregister(client *Client) {
-	hub.unregister <- client
+// removeLocked removes c and closes its send channel, reporting whether c was
+// registered. m.mu must be held.
+func (m *Manager) removeLocked(c *Client) bool {
+	clients := m.ballots[c.ballotID]
+	if _, ok := clients[c]; !ok {
+		return false
+	}
+	delete(clients, c)
+	close(c.send)
+	if len(clients) == 0 {
+		delete(m.ballots, c.ballotID)
+	}
+	return true
 }
 
 // Client wraps a single WebSocket connection.
 type Client struct {
-	conn *websocket.Conn
-	send chan []byte
-	hub  *BallotHub
+	conn     *websocket.Conn
+	ballotID string
+	send     chan []byte
+	manager  *Manager
 }
 
-// NewClient creates a new Client.
-func NewClient(conn *websocket.Conn, hub *BallotHub) *Client {
+// NewClient creates a Client for a ballot. Call Manager.Register to start
+// receiving broadcasts.
+func NewClient(conn *websocket.Conn, ballotID string, manager *Manager) *Client {
 	return &Client{
-		conn: conn,
-		send: make(chan []byte, 16),
-		hub:  hub,
+		conn:     conn,
+		ballotID: ballotID,
+		send:     make(chan []byte, sendBuffer),
+		manager:  manager,
 	}
 }
 
-// WritePump writes messages from the send channel to the WebSocket.
+// Send queues a message for this client only.
+func (c *Client) Send(data []byte) {
+	c.manager.mu.Lock()
+	defer c.manager.mu.Unlock()
+	c.manager.deliverLocked(c, data)
+}
+
+// WritePump writes queued messages to the WebSocket until the send channel is
+// closed or ctx is done.
 func (c *Client) WritePump(ctx context.Context) {
-	defer func() {
-		c.conn.Close(websocket.StatusNormalClosure, "")
-	}()
+	defer c.conn.Close(websocket.StatusNormalClosure, "")
 
 	for {
 		select {
 		case message, ok := <-c.send:
 			if !ok {
-				// Channel closed
 				return
 			}
 
@@ -189,28 +167,17 @@ func (c *Client) WritePump(ctx context.Context) {
 	}
 }
 
-// ReadPump reads messages from the WebSocket (primarily to detect disconnects).
+// ReadPump reads from the WebSocket to detect disconnects, then unregisters
+// the client. Clients aren't expected to send anything.
 func (c *Client) ReadPump(ctx context.Context) {
 	defer func() {
-		c.hub.Unregister(c)
+		c.manager.Unregister(c)
 		c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
 
 	for {
-		_, _, err := c.conn.Read(ctx)
-		if err != nil {
-			// Connection closed or error
+		if _, _, err := c.conn.Read(ctx); err != nil {
 			return
 		}
-		// We don't expect messages from clients, just read to detect disconnect
-	}
-}
-
-// Send sends a message to the client.
-func (c *Client) Send(data []byte) {
-	select {
-	case c.send <- data:
-	default:
-		// Buffer full, will be disconnected by hub
 	}
 }
