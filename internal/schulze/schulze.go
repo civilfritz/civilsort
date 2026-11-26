@@ -58,7 +58,7 @@ func buildPairwise(n int, prefs []Preference) [][]int {
 				case iRanked && !jRanked:
 					// i is ranked, j is not; i is preferred
 					d[i][j]++
-				// Other cases: j preferred or tied, no increment to d[i][j]
+					// Other cases: j preferred or tied, no increment to d[i][j]
 				}
 			}
 		}

@@ -20,9 +20,9 @@ A web application for ranked-choice voting with real-time results. Uses the Schu
 
 ## Quick Start
 
-1. **Build and run:**
+1. **Build and run** (requires Go and Node.js):
    ```bash
-   go build -o civilsort
+   make build
    ./civilsort
    ```
 
@@ -36,10 +36,10 @@ A web application for ranked-choice voting with real-time results. Uses the Schu
 ## Architecture
 
 ### Technology Stack
-- **Backend**: Go 1.25+ with standard library (`net/http`, `html/template`, `embed`)
+- **Backend**: Go 1.26+ with standard library (`net/http`, `html/template`, `embed`)
 - **Database**: SQLite with `modernc.org/sqlite` (pure Go, no CGO)
 - **WebSockets**: `github.com/coder/websocket`
-- **Frontend**: Vanilla JavaScript with SortableJS (loaded from CDN)
+- **Frontend**: TypeScript bundled with esbuild, SortableJS
 - **Deployment**: Single binary with embedded templates and static files
 
 ### Project Structure
@@ -53,14 +53,16 @@ civilfritz-voting/
 │   ├── model/                    # Domain types (Ballot, Item, Ranking)
 │   ├── schulze/                  # Pure Schulze algorithm with tests
 │   ├── handler/                  # HTTP handlers and middleware
-│   └── hub/                      # WebSocket broadcast hub
+│   ├── hub/                      # WebSocket broadcast hub
+│   └── protocol/                 # JSON message types shared with the frontend
 ├── templates/
 │   ├── home.html                 # Landing page
 │   ├── ballot.html               # Main ballot interface
 │   ├── about.html                # About page with usage help
 │   ├── stats.html                # Aggregate statistics
 │   └── closed.html               # "Ballot is closed" error page
-├── static/                       # CSS and JavaScript
+├── web/src/                      # TypeScript sources (bundled to static/app.js)
+├── static/                       # CSS and built JavaScript
 └── civilsort.db                  # SQLite database (created at runtime)
 ```
 
@@ -117,6 +119,15 @@ Run all tests across the project:
 ```bash
 go test ./... -v
 ```
+
+### Checks
+`make check` runs everything CI runs: `golangci-lint`, `nilaway`, the TypeScript
+type checker, and `go test -race`. It needs
+[golangci-lint](https://golangci-lint.run/) installed; `nilaway` runs via `go tool`.
+
+The WebSocket and JSON API message types live in `internal/protocol`. After
+changing them, run `make generate` to regenerate `web/src/protocol.gen.ts`; CI
+fails if the generated file is stale.
 
 Test coverage includes:
 - **Schulze algorithm**: Basic elections, Condorcet winners, cycle resolution (A>B, B>C, C>A), incomplete rankings, ties and edge cases

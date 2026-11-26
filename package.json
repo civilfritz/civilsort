@@ -1,0 +1,20 @@
+{
+  "name": "civilsort",
+  "private": true,
+  "scripts": {
+    "build": "esbuild web/src/main.ts --bundle --minify --sourcemap --target=es2020 --outfile=static/app.js",
+    "watch": "npm run build -- --watch",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "sortablejs": "^1.15.7"
+  },
+  "devDependencies": {
+    "@types/sortablejs": "^1.15.9",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "esbuild": false
+  }
+}

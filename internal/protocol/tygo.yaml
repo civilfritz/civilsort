@@ -1,0 +1,3 @@
+packages:
+  - path: "github.com/civilfritz/civilsort/internal/protocol"
+    output_path: "../../web/src/protocol.gen.ts"

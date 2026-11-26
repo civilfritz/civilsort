@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/civilfritz/civilsort/internal/model"
+	"github.com/civilfritz/civilsort/internal/protocol"
 	"github.com/civilfritz/civilsort/internal/schulze"
 )
 
@@ -123,7 +125,9 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Ballot is closed
 			w.WriteHeader(http.StatusForbidden)
-			h.templates.ExecuteTemplate(w, "closed.html", nil)
+			if err := h.templates.ExecuteTemplate(w, "closed.html", nil); err != nil {
+				log.Printf("Error rendering closed page: %v", err)
+			}
 			return
 		}
 	}
@@ -189,9 +193,12 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 
 	// Get current user's display name for this ballot
 	var displayName string
-	h.db.QueryRowContext(r.Context(),
+	err = h.db.QueryRowContext(r.Context(),
 		"SELECT display_name FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
 		ballotID, userID).Scan(&displayName)
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("Error fetching display name: %v", err)
+	}
 
 	// Count anonymous participants
 	anonymousCount := 0
@@ -253,7 +260,7 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Broadcast that items changed
-	h.broadcast(r.Context(), ballotID, "items_changed")
+	h.broadcastItemsChanged(r.Context(), ballotID)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -297,7 +304,7 @@ func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Broadcast that items changed
-	h.broadcast(r.Context(), ballotID, "items_changed")
+	h.broadcastItemsChanged(r.Context(), ballotID)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -314,9 +321,7 @@ func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 	userID := UserID(r.Context())
 
 	// Parse JSON body
-	var req struct {
-		Order []int64 `json:"order"`
-	}
+	var req protocol.SaveRankingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
@@ -367,7 +372,7 @@ func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Broadcast results update (ranking changed, no item changes)
-	h.broadcast(r.Context(), ballotID, "results")
+	h.broadcastResults(r.Context(), ballotID)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -405,10 +410,7 @@ func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 	h.broadcastStateChange(ballotID, newIsOpen)
 
 	// Return JSON with the new state
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"isOpen": newIsOpen,
-	})
+	writeJSON(w, protocol.ToggleResponse{IsOpen: newIsOpen})
 }
 
 // HandleSetName sets the display name for the current user.
@@ -447,22 +449,6 @@ func (h *Handler) HandleSetName(w http.ResponseWriter, r *http.Request) {
 	h.broadcastParticipantsChanged(r.Context(), ballotID)
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// broadcastStateChange broadcasts a ballot open/closed state change to all WebSocket clients.
-func (h *Handler) broadcastStateChange(ballotID string, isOpen bool) {
-	msg := map[string]interface{}{
-		"type":   "state_changed",
-		"isOpen": isOpen,
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Error marshaling state change for broadcast: %v", err)
-		return
-	}
-
-	h.hub.Broadcast(ballotID, data)
 }
 
 // isParticipant checks if a user is an authorized participant of a ballot.
@@ -631,39 +617,10 @@ func (h *Handler) getRankings(ctx context.Context, ballotID, userID string) ([]m
 	return rankings, rows.Err()
 }
 
-// ResultEntry represents one item in the final ranking.
-type ResultEntry struct {
-	Rank int    `json:"rank"`
-	Name string `json:"name"`
-}
-
-// ItemEntry represents an item for client-side rendering.
-type ItemEntry struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	AddedBy     string `json:"addedBy"`
-	AddedByName string `json:"addedByName"`
-}
-
-// ParticipantEntry represents a participant for client-side rendering.
-type ParticipantEntry struct {
-	DisplayName   string `json:"displayName"`
-	ParticipantID string `json:"participantId"`
-}
-
-// BroadcastMessage wraps the WebSocket payload with a message type.
-type BroadcastMessage struct {
-	Type             string             `json:"type"`
-	Results          []ResultEntry      `json:"results"`
-	Items            []ItemEntry        `json:"items,omitempty"`
-	Participants     []ParticipantEntry `json:"participants,omitempty"`
-	ParticipantCount int                `json:"participantCount,omitempty"`
-}
-
 // computeResults computes the Schulze ranking for a ballot.
-func (h *Handler) computeResults(ctx context.Context, ballotID string, items []model.Item) ([]ResultEntry, error) {
+func (h *Handler) computeResults(ctx context.Context, ballotID string, items []model.Item) ([]protocol.ResultEntry, error) {
 	if len(items) == 0 {
-		return []ResultEntry{}, nil
+		return []protocol.ResultEntry{}, nil
 	}
 
 	// Build item index mapping
@@ -714,10 +671,10 @@ func (h *Handler) computeResults(ctx context.Context, ballotID string, items []m
 	// Compute Schulze results
 	results := schulze.Compute(len(items), prefs)
 
-	// Convert to ResultEntry
-	entries := make([]ResultEntry, len(results))
+	// Convert to protocol.ResultEntry
+	entries := make([]protocol.ResultEntry, len(results))
 	for i, r := range results {
-		entries[i] = ResultEntry{
+		entries[i] = protocol.ResultEntry{
 			Rank: r.Rank,
 			Name: indexToItem[r.CandidateIndex].Name,
 		}
@@ -726,79 +683,33 @@ func (h *Handler) computeResults(ctx context.Context, ballotID string, items []m
 	return entries, nil
 }
 
-// broadcast recomputes and broadcasts a typed message to all WebSocket clients.
-// messageType should be "results" (ranking changed) or "items_changed" (items added/deleted).
-func (h *Handler) broadcast(ctx context.Context, ballotID, messageType string) {
-	items, err := h.getItems(ctx, ballotID)
-	if err != nil {
-		log.Printf("Error getting items for broadcast: %v", err)
-		return
-	}
-
-	results, err := h.computeResults(ctx, ballotID, items)
-	if err != nil {
-		log.Printf("Error computing results for broadcast: %v", err)
-		return
-	}
-
-	participants, err := h.getParticipants(ctx, ballotID)
-	if err != nil {
-		log.Printf("Error getting participants for broadcast: %v", err)
-		return
-	}
-
-	msg := BroadcastMessage{
-		Type:             messageType,
-		Results:          results,
-		ParticipantCount: len(participants),
-	}
-
-	// Include item list for items_changed messages
-	if messageType == "items_changed" {
-		itemEntries := make([]ItemEntry, len(items))
-		for i, item := range items {
-			itemEntries[i] = ItemEntry{
-				ID:          item.ID,
-				Name:        item.Name,
-				AddedBy:     item.AddedBy,
-				AddedByName: item.AddedByName,
-			}
-		}
-		msg.Items = itemEntries
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Error marshaling message for broadcast: %v", err)
-		return
-	}
-
-	h.hub.Broadcast(ballotID, data)
+// ballotSnapshot is the ballot state carried by broadcast messages.
+type ballotSnapshot struct {
+	items        []protocol.ItemEntry
+	results      []protocol.ResultEntry
+	participants []protocol.ParticipantEntry
 }
 
-// broadcastParticipantsChanged broadcasts a participants_changed message with updated participant list and items.
-func (h *Handler) broadcastParticipantsChanged(ctx context.Context, ballotID string) {
+// snapshot loads items, computes results, and lists participants for a ballot.
+func (h *Handler) snapshot(ctx context.Context, ballotID string) (ballotSnapshot, error) {
 	items, err := h.getItems(ctx, ballotID)
 	if err != nil {
-		log.Printf("Error getting items for broadcast: %v", err)
-		return
+		return ballotSnapshot{}, fmt.Errorf("getting items: %w", err)
 	}
 
 	results, err := h.computeResults(ctx, ballotID, items)
 	if err != nil {
-		log.Printf("Error computing results for broadcast: %v", err)
-		return
+		return ballotSnapshot{}, fmt.Errorf("computing results: %w", err)
 	}
 
 	participants, err := h.getParticipants(ctx, ballotID)
 	if err != nil {
-		log.Printf("Error getting participants for broadcast: %v", err)
-		return
+		return ballotSnapshot{}, fmt.Errorf("getting participants: %w", err)
 	}
 
-	itemEntries := make([]ItemEntry, len(items))
+	itemEntries := make([]protocol.ItemEntry, len(items))
 	for i, item := range items {
-		itemEntries[i] = ItemEntry{
+		itemEntries[i] = protocol.ItemEntry{
 			ID:          item.ID,
 			Name:        item.Name,
 			AddedBy:     item.AddedBy,
@@ -806,28 +717,63 @@ func (h *Handler) broadcastParticipantsChanged(ctx context.Context, ballotID str
 		}
 	}
 
-	participantEntries := make([]ParticipantEntry, len(participants))
+	participantEntries := make([]protocol.ParticipantEntry, len(participants))
 	for i, p := range participants {
-		participantEntries[i] = ParticipantEntry{
+		participantEntries[i] = protocol.ParticipantEntry{
 			DisplayName:   p.DisplayName,
 			ParticipantID: p.ParticipantID,
 		}
 	}
 
-	msg := BroadcastMessage{
-		Type:             "participants_changed",
-		Results:          results,
-		Items:            itemEntries,
-		Participants:     participantEntries,
-		ParticipantCount: len(participants),
-	}
+	return ballotSnapshot{
+		items:        itemEntries,
+		results:      results,
+		participants: participantEntries,
+	}, nil
+}
 
-	data, err := json.Marshal(msg)
+// broadcastResults broadcasts updated results after a ranking change.
+func (h *Handler) broadcastResults(ctx context.Context, ballotID string) {
+	s, err := h.snapshot(ctx, ballotID)
 	if err != nil {
-		log.Printf("Error marshaling participants_changed for broadcast: %v", err)
+		log.Printf("Error building results broadcast: %v", err)
 		return
 	}
+	h.send(ballotID, protocol.NewResultsMessage(s.results, len(s.participants)))
+}
 
+// broadcastItemsChanged broadcasts the item list after an add or delete.
+func (h *Handler) broadcastItemsChanged(ctx context.Context, ballotID string) {
+	s, err := h.snapshot(ctx, ballotID)
+	if err != nil {
+		log.Printf("Error building items_changed broadcast: %v", err)
+		return
+	}
+	h.send(ballotID, protocol.NewItemsChangedMessage(s.results, s.items, len(s.participants)))
+}
+
+// broadcastParticipantsChanged broadcasts the participant list, items, and results.
+func (h *Handler) broadcastParticipantsChanged(ctx context.Context, ballotID string) {
+	s, err := h.snapshot(ctx, ballotID)
+	if err != nil {
+		log.Printf("Error building participants_changed broadcast: %v", err)
+		return
+	}
+	h.send(ballotID, protocol.NewParticipantsChangedMessage(s.results, s.items, s.participants))
+}
+
+// broadcastStateChange broadcasts a ballot open/closed state change.
+func (h *Handler) broadcastStateChange(ballotID string, isOpen bool) {
+	h.send(ballotID, protocol.NewStateChangedMessage(isOpen))
+}
+
+// send marshals msg and broadcasts it to all WebSocket clients on a ballot.
+func (h *Handler) send(ballotID string, msg any) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling broadcast: %v", err)
+		return
+	}
 	h.hub.Broadcast(ballotID, data)
 }
 
@@ -872,16 +818,18 @@ func (h *Handler) HandleGetRankings(w http.ResponseWriter, r *http.Request) {
 		itemNames[item.ID] = item.Name
 	}
 
-	// Build ordered list of ranked item names
-	type RankedItem struct {
-		Name string `json:"name"`
-	}
-
-	rankedItems := make([]RankedItem, len(rankings))
+	rankedItems := make([]protocol.RankedItem, len(rankings))
 	for i, ranking := range rankings {
-		rankedItems[i] = RankedItem{Name: itemNames[ranking.ItemID]}
+		rankedItems[i] = protocol.RankedItem{Name: itemNames[ranking.ItemID]}
 	}
 
+	writeJSON(w, rankedItems)
+}
+
+// writeJSON encodes v as the JSON response body.
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rankedItems)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("Error writing JSON response: %v", err)
+	}
 }

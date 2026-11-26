@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -130,13 +131,8 @@ func TestListItems_WithResults(t *testing.T) {
 	}
 
 	// Add items
-	result1, _ := database.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
-		"ballot1", "Item A", "user1")
-	item1, _ := result1.LastInsertId()
-
-	result2, _ := database.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
-		"ballot1", "Item B", "user2")
-	item2, _ := result2.LastInsertId()
+	item1 := insertItem(t, database, "ballot1", "Item A", "user1")
+	item2 := insertItem(t, database, "ballot1", "Item B", "user2")
 
 	// Add rankings (user1 prefers A, user2 prefers B)
 	_, err = database.Exec("INSERT INTO rankings (ballot_id, user_id, item_id, position) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)",
@@ -201,4 +197,19 @@ func TestListParticipants_WithData(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
+}
+
+// insertItem inserts an item and returns its ID, failing the test on error.
+func insertItem(t *testing.T, db *sql.DB, ballotID, name, addedBy string) int64 {
+	t.Helper()
+	result, err := db.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
+		ballotID, name, addedBy)
+	if err != nil {
+		t.Fatalf("Failed to insert item %q: %v", name, err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		t.Fatalf("Failed to get item ID: %v", err)
+	}
+	return id
 }

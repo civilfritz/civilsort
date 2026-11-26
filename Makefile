@@ -1,10 +1,28 @@
 BINARY  := civilsort
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo 0.0.0-dev)
 
-.PHONY: build clean deb
+.PHONY: build web generate lint check clean deb
 
-build:
+build: web
 	go build -o $(BINARY)
+
+node_modules: package.json package-lock.json
+	npm ci
+	@touch node_modules
+
+web: node_modules
+	npm run build
+
+generate:
+	go generate ./...
+
+lint: node_modules
+	golangci-lint run ./...
+	go tool nilaway -include-pkgs=github.com/civilfritz/civilsort ./...
+	npm run typecheck
+
+check: lint
+	go test -race ./...
 
 deb: build
 	mkdir -p dist/deb/usr/bin
@@ -21,4 +39,4 @@ deb: build
 	dpkg-deb --build dist/deb dist/$(BINARY)_$(VERSION)_amd64.deb
 
 clean:
-	rm -rf $(BINARY) dist
+	rm -rf $(BINARY) dist static/app.js static/app.js.map

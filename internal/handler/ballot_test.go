@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"github.com/civilfritz/civilsort/internal/util"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"github.com/civilfritz/civilsort/internal/util"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -118,7 +119,7 @@ func TestHandleAddItem(t *testing.T) {
 	h := testHandler(t)
 
 	// Create ballot and make user a participant
-	req, rec, userID := authedRequest(t, h, "POST", "/ballot/test/items", nil)
+	_, _, userID := authedRequest(t, h, "POST", "/ballot/test/items", nil)
 
 	ballotID := generateBallotID()
 	_, err := h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
@@ -134,7 +135,7 @@ func TestHandleAddItem(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("name", "Test Item")
-	req, rec, _ = authedRequest(t, h, "POST", "/ballot/"+ballotID+"/items", strings.NewReader(form.Encode()))
+	req, rec, _ := authedRequest(t, h, "POST", "/ballot/"+ballotID+"/items", strings.NewReader(form.Encode()))
 	req.SetPathValue("id", ballotID)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -203,12 +204,8 @@ func TestHandleSaveRankings(t *testing.T) {
 	}
 
 	// Add items
-	result1, _ := h.db.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
-		ballotID, "Item 1", userID)
-	item1, _ := result1.LastInsertId()
-	result2, _ := h.db.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
-		ballotID, "Item 2", userID)
-	item2, _ := result2.LastInsertId()
+	item1 := insertItem(t, h.db, ballotID, "Item 1", userID)
+	item2 := insertItem(t, h.db, ballotID, "Item 2", userID)
 
 	// Save rankings
 	payload := map[string]interface{}{
@@ -395,4 +392,19 @@ func TestHandleSetName_NotParticipant(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("Expected status 403, got %d", rec.Code)
 	}
+}
+
+// insertItem inserts an item and returns its ID, failing the test on error.
+func insertItem(t *testing.T, db *sql.DB, ballotID, name, addedBy string) int64 {
+	t.Helper()
+	result, err := db.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
+		ballotID, name, addedBy)
+	if err != nil {
+		t.Fatalf("Failed to insert item %q: %v", name, err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		t.Fatalf("Failed to get item ID: %v", err)
+	}
+	return id
 }

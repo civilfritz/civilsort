@@ -1,0 +1,31 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - exhaustive
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      # Deferred cleanup and CLI output, where there is nothing useful to do
+      # with the error.
+      exclude-functions:
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Stmt).Close
+        - (*database/sql.Tx).Rollback
+        - (*os.File).Close
+        - os.Remove
+        - (*github.com/coder/websocket.Conn).Close
+        - fmt.Fprintf
+        - fmt.Fprintln
+    exhaustive:
+      default-signifies-exhaustive: false
+
+formatters:
+  enable:
+    - gofmt

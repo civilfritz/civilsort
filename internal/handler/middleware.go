@@ -47,7 +47,11 @@ func (h *Handler) UserMiddleware(next http.Handler) http.Handler {
 				// Cookie exists but user doesn't - treat as new user
 				userID = util.GenerateUUID()
 				fresh = true
-				h.db.ExecContext(r.Context(), "INSERT OR IGNORE INTO users (id) VALUES (?)", userID)
+				if _, err := h.db.ExecContext(r.Context(), "INSERT OR IGNORE INTO users (id) VALUES (?)", userID); err != nil {
+					log.Printf("Error creating user: %v", err)
+					http.Error(w, "Internal server error", http.StatusInternalServerError)
+					return
+				}
 				setCookie(w, userID)
 			} else {
 				fresh = false

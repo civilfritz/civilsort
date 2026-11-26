@@ -65,3 +65,8 @@ Thumbs.db
 
 # Build artifacts
 /dist/
+
+# Frontend build output and dependencies
+/static/app.js
+/static/app.js.map
+/node_modules/

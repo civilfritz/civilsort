@@ -8,12 +8,12 @@ import (
 
 // Stats holds aggregate statistics for the /stats page.
 type Stats struct {
-	TotalBallots      int
-	NewestBallot      string
-	MaxEntries        int
-	MaxParticipants   int
-	AvgEntries        float64
-	AvgParticipants   float64
+	TotalBallots    int
+	NewestBallot    string
+	MaxEntries      int
+	MaxParticipants int
+	AvgEntries      float64
+	AvgParticipants float64
 }
 
 // HandleStats shows de-identified aggregate statistics.

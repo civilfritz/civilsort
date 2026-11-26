@@ -5,8 +5,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/coder/websocket"
 	hubpkg "github.com/civilfritz/civilsort/internal/hub"
+	"github.com/civilfritz/civilsort/internal/protocol"
+	"github.com/coder/websocket"
 )
 
 // HandleWebSocket upgrades to WebSocket for live results.
@@ -36,19 +37,10 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ballotHub.Register(client)
 
 	// Send current results immediately
-	items, err := h.getItems(r.Context(), ballotID)
-	if err == nil {
-		results, err := h.computeResults(r.Context(), ballotID, items)
-		if err == nil {
-			msg := BroadcastMessage{
-				Type:    "results",
-				Results: results,
-			}
-			data, err := json.Marshal(msg)
-			if err == nil {
-				client.Send(data)
-			}
-		}
+	if snap, err := h.snapshot(r.Context(), ballotID); err != nil {
+		log.Printf("Error building initial results: %v", err)
+	} else if data, err := json.Marshal(protocol.NewResultsMessage(snap.results, len(snap.participants))); err == nil {
+		client.Send(data)
 	}
 
 	// Start write pump in a goroutine

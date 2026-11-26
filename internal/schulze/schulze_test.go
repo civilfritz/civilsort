@@ -100,9 +100,9 @@ func TestSchulze_IncompleteRankings(t *testing.T) {
 	//
 	// Expected: A and B tie (1-1), but both beat C in different ways
 	prefs := []Preference{
-		{0: 1, 1: 2},    // A > B, C unranked
-		{1: 1, 2: 2},    // B > C, A unranked
-		{2: 1},          // C only, A and B unranked
+		{0: 1, 1: 2}, // A > B, C unranked
+		{1: 1, 2: 2}, // B > C, A unranked
+		{2: 1},       // C only, A and B unranked
 	}
 
 	results := Compute(3, prefs)
