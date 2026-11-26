@@ -70,20 +70,10 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	userID := UserID(r.Context())
 
 	// 1. Load ballot
-	var ballot model.Ballot
-	var isOpenInt int
-	err := h.db.QueryRowContext(r.Context(),
-		"SELECT id, title, is_open, created_by, created_at FROM ballots WHERE id = ?",
-		ballotID).Scan(&ballot.ID, &ballot.Title, &isOpenInt, &ballot.CreatedBy, &ballot.CreatedAt)
-	if err == sql.ErrNoRows {
-		http.NotFound(w, r)
-		return
-	} else if err != nil {
-		log.Printf("Error fetching ballot: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	ballot := h.loadBallot(w, r, ballotID)
+	if ballot == nil {
 		return
 	}
-	ballot.IsOpen = isOpenInt == 1
 
 	// 2. If participant URL with fresh cookie: adopt the identity
 	if participantID != "" && IsFreshCookie(r.Context()) {
@@ -102,7 +92,7 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Check if current user is a participant
 	var currentParticipantID, currentPublicID string
-	err = h.db.QueryRowContext(r.Context(),
+	err := h.db.QueryRowContext(r.Context(),
 		"SELECT participant_id, public_id FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
 		ballotID, userID).Scan(&currentParticipantID, &currentPublicID)
 	isParticipant := (err == nil)
@@ -465,6 +455,26 @@ func (h *Handler) HandleSetName(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// loadBallot fetches a ballot by ID. On failure it writes a 404 or 500 and
+// returns nil.
+func (h *Handler) loadBallot(w http.ResponseWriter, r *http.Request, ballotID string) *model.Ballot {
+	var ballot model.Ballot
+	var isOpenInt int
+	err := h.db.QueryRowContext(r.Context(),
+		"SELECT id, title, is_open, created_by, created_at FROM ballots WHERE id = ?",
+		ballotID).Scan(&ballot.ID, &ballot.Title, &isOpenInt, &ballot.CreatedBy, &ballot.CreatedAt)
+	if err == sql.ErrNoRows {
+		http.NotFound(w, r)
+		return nil
+	} else if err != nil {
+		log.Printf("Error fetching ballot: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return nil
+	}
+	ballot.IsOpen = isOpenInt == 1
+	return &ballot
+}
+
 // isParticipant checks if a user is an authorized participant of a ballot.
 func (h *Handler) isParticipant(ctx context.Context, ballotID, userID string) (bool, error) {
 	var exists bool
@@ -514,20 +524,10 @@ func (h *Handler) addParticipant(ctx context.Context, ballotID, userID string) (
 func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ballotID string) *model.Ballot {
 	userID := UserID(r.Context())
 
-	var ballot model.Ballot
-	var isOpenInt int
-	err := h.db.QueryRowContext(r.Context(),
-		"SELECT id, title, is_open, created_by, created_at FROM ballots WHERE id = ?",
-		ballotID).Scan(&ballot.ID, &ballot.Title, &isOpenInt, &ballot.CreatedBy, &ballot.CreatedAt)
-	if err == sql.ErrNoRows {
-		http.NotFound(w, r)
-		return nil
-	} else if err != nil {
-		log.Printf("Error fetching ballot: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	ballot := h.loadBallot(w, r, ballotID)
+	if ballot == nil {
 		return nil
 	}
-	ballot.IsOpen = isOpenInt == 1
 
 	isParticipant, err := h.isParticipant(r.Context(), ballotID, userID)
 	if err != nil {
@@ -548,7 +548,7 @@ func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ball
 				h.broadcastParticipantsChanged(r.Context(), ballotID)
 			}
 		}
-		return &ballot
+		return ballot
 	}
 
 	// Closed ballot: only existing participants allowed
@@ -556,7 +556,7 @@ func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ball
 		http.Error(w, "This ballot is currently closed.", http.StatusForbidden)
 		return nil
 	}
-	return &ballot
+	return ballot
 }
 
 // getItems retrieves all items for a ballot with display names.
