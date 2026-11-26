@@ -104,7 +104,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           securityHeadersMiddleware(root),
+		Handler:           securityHeadersMiddleware(http.NewCrossOriginProtection().Handler(root)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

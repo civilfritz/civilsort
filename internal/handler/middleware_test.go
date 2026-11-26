@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -208,5 +209,28 @@ func TestHandleCreateBallot_CreatesUser(t *testing.T) {
 	}
 	if !exists {
 		t.Error("Creating a ballot should create the user row")
+	}
+}
+
+func TestSetCookie_Secure(t *testing.T) {
+	tests := map[string]struct {
+		configure func(*http.Request)
+		want      bool
+	}{
+		"plain http":   {func(*http.Request) {}, false},
+		"behind proxy": {func(r *http.Request) { r.Header.Set("X-Forwarded-Proto", "https") }, true},
+		"direct tls":   {func(r *http.Request) { r.TLS = &tls.ConnectionState{} }, true},
+		"proxy, http":  {func(r *http.Request) { r.Header.Set("X-Forwarded-Proto", "http") }, false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			tt.configure(req)
+			rec := httptest.NewRecorder()
+			setCookie(rec, req, "id")
+			if got := rec.Result().Cookies()[0].Secure; got != tt.want {
+				t.Errorf("Secure = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

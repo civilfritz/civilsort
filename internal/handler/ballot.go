@@ -83,7 +83,7 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 			ballotID, participantID).Scan(&ownerID)
 		if err == nil {
 			// Found the owner - set cookie and redirect to same URL
-			setCookie(w, ownerID)
+			setCookie(w, r, ownerID)
 			http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
 			return
 		}

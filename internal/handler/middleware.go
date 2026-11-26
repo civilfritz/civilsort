@@ -29,7 +29,7 @@ func (h *Handler) UserMiddleware(next http.Handler) http.Handler {
 			userID = cookie.Value
 		} else {
 			userID = util.GenerateUUID()
-			setCookie(w, userID)
+			setCookie(w, r, userID)
 		}
 
 		var exists bool
@@ -69,15 +69,23 @@ func IsFreshCookie(ctx context.Context) bool {
 }
 
 // setCookie sets the voter_id cookie with standard parameters.
-func setCookie(w http.ResponseWriter, userID string) {
+func setCookie(w http.ResponseWriter, r *http.Request, userID string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    userID,
 		Path:     "/",
 		MaxAge:   365 * 24 * 60 * 60, // 1 year
 		HttpOnly: true,
+		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// isHTTPS reports whether the client connected over HTTPS, directly or via a
+// TLS-terminating proxy such as Caddy. A spoofed header only makes the
+// spoofer's own cookie Secure.
+func isHTTPS(r *http.Request) bool {
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 // generateBallotID generates a short random ID for URLs.
