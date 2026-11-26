@@ -344,12 +344,23 @@ class BallotPage {
         const input = byId('display-name', HTMLInputElement);
         if (!input) return;
 
+        // Each save broadcasts to every participant, so skip unchanged names
+        // (Enter saves and then blurs, which would otherwise save twice).
+        let saved: string | null = input.value.trim();
+
         const save = (): void => {
+            const name = input.value.trim();
+            if (name === saved) return;
+            saved = name;
+
             fetch(`/ballot/${this.ballotId}/name`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ name: input.value.trim() }),
+                body: new URLSearchParams({ name }),
+            }).then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
             }).catch((err: unknown) => {
+                saved = null; // retry on next blur
                 console.error('Error saving name:', err);
             });
         };
