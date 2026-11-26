@@ -1,18 +1,26 @@
 package cmd
 
 import (
+	"context"
 	"embed"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/civilfritz/civilsort/internal/db"
 	"github.com/civilfritz/civilsort/internal/handler"
 	"github.com/civilfritz/civilsort/internal/hub"
 	"github.com/spf13/cobra"
 )
+
+// shutdownTimeout bounds how long in-flight requests get to finish on SIGTERM.
+const shutdownTimeout = 10 * time.Second
 
 var (
 	dbPath string
@@ -30,6 +38,11 @@ func NewRootCmd(tmpls embed.FS, static embed.FS) *cobra.Command {
 		Use:   "civilsort",
 		Short: "Ranked-choice voting server using the Schulze method",
 		RunE:  runServer,
+		// Runs after argument validation, so usage errors still print help
+		// but runtime errors don't.
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			cmd.SilenceUsage = true
+		},
 	}
 
 	// Persistent flag (shared by all commands)
@@ -63,44 +76,63 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
-	// Open database
 	database, err := db.Open(dbPath)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		return fmt.Errorf("opening database: %w", err)
 	}
 	defer database.Close()
 
-	// Parse templates
 	tmpls, err := template.ParseFS(templateFS, "templates/*.html")
 	if err != nil {
-		log.Fatalf("Failed to parse templates: %v", err)
+		return fmt.Errorf("parsing templates: %w", err)
 	}
 
-	// Create hub manager
 	hubManager := hub.NewManager()
-	defer hubManager.CloseAll()
-
-	// Create handler
 	h := handler.New(database, tmpls, hubManager)
 
-	// Set up routes
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
 	// Static files skip UserMiddleware: they don't need a user.
 	staticSub, err := fs.Sub(staticFS, "static")
 	if err != nil {
-		log.Fatalf("Failed to create static sub-filesystem: %v", err)
+		return fmt.Errorf("loading static files: %w", err)
 	}
 	root := http.NewServeMux()
 	root.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 	root.Handle("/", h.UserMiddleware(mux))
 
-	handler := securityHeadersMiddleware(root)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           securityHeadersMiddleware(root),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
-	// Start server
-	log.Printf("Listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, handler))
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serveErr := make(chan error, 1)
+	go func() {
+		log.Printf("Listening on %s", addr)
+		serveErr <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErr:
+		return err
+	case <-ctx.Done():
+	}
+
+	log.Print("Shutting down")
+	// Shutdown doesn't track hijacked WebSocket connections, so close them
+	// first; browsers reconnect with backoff.
+	hubManager.CloseAll()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutting down: %w", err)
+	}
 	return nil
 }
 

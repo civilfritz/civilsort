@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"log"
+	"fmt"
 
 	"github.com/civilfritz/civilsort/internal/cli"
 	"github.com/civilfritz/civilsort/internal/db"
@@ -24,7 +24,7 @@ func NewListCmd() *cobra.Command {
 func runListBallots(cmd *cobra.Command, args []string) error {
 	database, err := db.Open(dbPath)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		return fmt.Errorf("opening database: %w", err)
 	}
 	defer database.Close()
 
