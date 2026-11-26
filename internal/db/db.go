@@ -2,29 +2,35 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/civilfritz/civilsort/internal/util"
 	_ "modernc.org/sqlite"
 )
 
+// busyTimeoutMS is how long a write waits for a lock before failing.
+const busyTimeoutMS = 5000
+
 // Open opens the SQLite database and applies pragmas.
 func Open(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
+	// Pragmas go in the DSN so the driver applies them to every pooled
+	// connection; foreign_keys and busy_timeout are per-connection settings.
+	dsn := path + "?" + url.Values{"_pragma": {
+		"foreign_keys(1)",
+		fmt.Sprintf("busy_timeout(%d)", busyTimeoutMS),
+		"journal_mode(WAL)",
+	}}.Encode()
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	// Enable WAL mode for better concurrency
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
-		return nil, err
-	}
-
-	// Enable foreign key constraints
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		db.Close()
-		return nil, err
+	// Each connection to :memory: is a separate empty database.
+	if path == ":memory:" {
+		db.SetMaxOpenConns(1)
 	}
 
 	// Run migrations
@@ -116,6 +122,12 @@ func migrate(db *sql.DB) error {
 		if _, err := db.Exec(idx); err != nil {
 			return err
 		}
+	}
+
+	// Remove rankings orphaned while foreign keys were only enabled on one
+	// pooled connection.
+	if _, err := db.Exec(`DELETE FROM rankings WHERE item_id NOT IN (SELECT id FROM items)`); err != nil {
+		return err
 	}
 
 	return nil

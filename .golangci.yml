@@ -14,6 +14,7 @@ linters:
       # Deferred cleanup and CLI output, where there is nothing useful to do
       # with the error.
       exclude-functions:
+        - (*database/sql.Conn).Close
         - (*database/sql.DB).Close
         - (*database/sql.Rows).Close
         - (*database/sql.Stmt).Close
