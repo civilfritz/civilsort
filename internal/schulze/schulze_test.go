@@ -218,3 +218,26 @@ func TestSchulze_Ties(t *testing.T) {
 		t.Errorf("Expected both candidates to have 0 wins")
 	}
 }
+
+func TestSchulze_TiesKeepCandidateOrder(t *testing.T) {
+	// One voter ranks every odd candidate equal first and leaves the evens
+	// unranked: odds tie at rank 1, evens tie behind them. Sorting must move
+	// elements, and each tied group must stay in index order so live results
+	// don't reshuffle between recomputations.
+	const n = 50
+	pref := Preference{}
+	for i := 1; i < n; i += 2 {
+		pref[i] = 1
+	}
+
+	results := Compute(n, []Preference{pref})
+	for i, r := range results {
+		want := 2*i + 1 // odds first
+		if i >= n/2 {
+			want = 2 * (i - n/2) // then evens
+		}
+		if r.CandidateIndex != want {
+			t.Fatalf("position %d holds candidate %d, want %d", i, r.CandidateIndex, want)
+		}
+	}
+}

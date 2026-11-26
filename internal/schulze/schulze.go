@@ -131,8 +131,9 @@ func determineRanking(n int, p [][]int) []Result {
 		}
 	}
 
-	// Sort by wins descending
-	sort.Slice(results, func(a, b int) bool {
+	// Sort by wins descending. Stable, so tied candidates stay in index
+	// order and don't swap places between recomputations.
+	sort.SliceStable(results, func(a, b int) bool {
 		return results[a].Wins > results[b].Wins
 	})
 
@@ -146,11 +147,4 @@ func determineRanking(n int, p [][]int) []Result {
 	}
 
 	return results
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
