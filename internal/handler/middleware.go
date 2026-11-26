@@ -15,53 +15,41 @@ type contextKey string
 const userIDKey contextKey = "userID"
 const freshCookieKey contextKey = "freshCookie"
 
-// UserMiddleware ensures every request has a user ID.
-// If the voter_id cookie doesn't exist, it creates a new user and sets the cookie.
+// UserMiddleware ensures every request has a user ID, issuing a voter_id
+// cookie when the request has no well-formed one. It doesn't write to the
+// database: the users row is created by ensureUser when the user first joins
+// or creates a ballot, so crawlers and one-off visits leave no trace.
+//
+// A request is "fresh" when its user has no row yet, i.e. hasn't joined any
+// ballot; HandleBallot lets such a browser adopt a participant link.
 func (h *Handler) UserMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var userID string
-		var fresh bool
-
-		cookie, err := r.Cookie(cookieName)
-		if err != nil || cookie.Value == "" {
-			// Generate new user
-			userID = util.GenerateUUID()
-			fresh = true
-
-			// Insert into users table
-			_, err := h.db.ExecContext(r.Context(), "INSERT OR IGNORE INTO users (id) VALUES (?)", userID)
-			if err != nil {
-				log.Printf("Error creating user: %v", err)
-				http.Error(w, "Internal server error", http.StatusInternalServerError)
-				return
-			}
-
-			setCookie(w, userID)
-		} else {
+		if cookie, err := r.Cookie(cookieName); err == nil && util.IsUUID(cookie.Value) {
 			userID = cookie.Value
+		} else {
+			userID = util.GenerateUUID()
+			setCookie(w, userID)
+		}
 
-			// Verify user exists in database
-			var exists bool
-			err := h.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", userID).Scan(&exists)
-			if err != nil || !exists {
-				// Cookie exists but user doesn't - treat as new user
-				userID = util.GenerateUUID()
-				fresh = true
-				if _, err := h.db.ExecContext(r.Context(), "INSERT OR IGNORE INTO users (id) VALUES (?)", userID); err != nil {
-					log.Printf("Error creating user: %v", err)
-					http.Error(w, "Internal server error", http.StatusInternalServerError)
-					return
-				}
-				setCookie(w, userID)
-			} else {
-				fresh = false
-			}
+		var exists bool
+		err := h.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", userID).Scan(&exists)
+		if err != nil {
+			log.Printf("Error checking user: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
 		}
 
 		ctx := context.WithValue(r.Context(), userIDKey, userID)
-		ctx = context.WithValue(ctx, freshCookieKey, fresh)
+		ctx = context.WithValue(ctx, freshCookieKey, !exists)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// ensureUser creates the users row for userID if it doesn't exist yet.
+func (h *Handler) ensureUser(ctx context.Context, userID string) error {
+	_, err := h.db.ExecContext(ctx, "INSERT OR IGNORE INTO users (id) VALUES (?)", userID)
+	return err
 }
 
 // UserID extracts the user ID from the request context.
@@ -72,7 +60,7 @@ func UserID(ctx context.Context) string {
 	return ""
 }
 
-// IsFreshCookie returns true if this request resulted in creating a new cookie/user.
+// IsFreshCookie reports whether the request's user hasn't joined any ballot yet.
 func IsFreshCookie(ctx context.Context) bool {
 	if fresh, ok := ctx.Value(freshCookieKey).(bool); ok {
 		return fresh

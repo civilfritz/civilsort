@@ -87,15 +87,16 @@ func runServer(cmd *cobra.Command, args []string) error {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
-	// Serve static files from the static/ subdirectory in the embedded FS
+	// Static files skip UserMiddleware: they don't need a user.
 	staticSub, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		log.Fatalf("Failed to create static sub-filesystem: %v", err)
 	}
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
+	root := http.NewServeMux()
+	root.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
+	root.Handle("/", h.UserMiddleware(mux))
 
-	// Apply middleware chain
-	handler := h.UserMiddleware(securityHeadersMiddleware(mux))
+	handler := securityHeadersMiddleware(root)
 
 	// Start server
 	log.Printf("Listening on %s", addr)

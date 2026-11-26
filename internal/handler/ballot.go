@@ -33,6 +33,12 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 	userID := UserID(r.Context())
 	ballotID := generateBallotID()
 
+	if err := h.ensureUser(r.Context(), userID); err != nil {
+		log.Printf("Error creating user: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	_, err := h.db.ExecContext(r.Context(),
 		"INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
 		ballotID, title, userID)
@@ -463,6 +469,10 @@ func (h *Handler) isParticipant(ctx context.Context, ballotID, userID string) (b
 
 // addParticipant records a user as an authorized participant and returns their participant ID.
 func (h *Handler) addParticipant(ctx context.Context, ballotID, userID string) (string, bool, error) {
+	if err := h.ensureUser(ctx, userID); err != nil {
+		return "", false, err
+	}
+
 	participantID := generateParticipantID()
 	result, err := h.db.ExecContext(ctx,
 		"INSERT OR IGNORE INTO ballot_participants (ballot_id, user_id, participant_id, public_id) VALUES (?, ?, ?, ?)",

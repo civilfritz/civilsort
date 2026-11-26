@@ -32,3 +32,25 @@ func GenerateShortID() string {
 	}
 	return string(b)
 }
+
+// IsUUID reports whether s has the form produced by GenerateUUID:
+// 8-4-4-4-12 lowercase hex digits.
+func IsUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			isHex := '0' <= c && c <= '9' || 'a' <= c && c <= 'f'
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
