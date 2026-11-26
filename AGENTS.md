@@ -1,13 +1,17 @@
 # civilsort
 
 Ranked-choice voting web app: Go server (SQLite, WebSockets) computing live
-Schulze rankings. See README.md for features and architecture.
+Schulze rankings, with a TypeScript frontend in `web/src/`. See README.md for
+features and architecture.
 
 ## Commands
 
-- Build: `go build -o civilsort` (or `make build`)
-- Test: `go test -race ./...` (what CI runs)
-- Lint: `golangci-lint run` (config in `.golangci.yml`)
+- Build: `make build`. It bundles `web/src/` into `static/app.js` (gitignored)
+  before `go build`; a bare `go build` embeds no JavaScript.
+- Test: `go test -race ./...`
+- Lint: `make lint` runs `golangci-lint run` (config in `.golangci.yml`),
+  `go tool nilaway`, and `npm run typecheck`.
+- Everything CI runs: `make check` (lint + tests).
 - Regenerate TypeScript protocol types after changing
   `internal/protocol/protocol.go`: `go generate ./internal/protocol`.
   Never hand-edit `web/src/protocol.gen.ts`.
