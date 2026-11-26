@@ -87,6 +87,7 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE ballot_participants ADD COLUMN participant_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE ballot_participants ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE ballot_participants ADD COLUMN public_id TEXT NOT NULL DEFAULT ''`,
 	}
 
 	for _, m := range migrations {
@@ -98,23 +99,32 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
-	// Backfill participant_id for existing rows BEFORE creating the unique index
-	if err := backfillParticipantIDs(db); err != nil {
-		return err
+	// Backfill IDs for existing rows BEFORE creating the unique indexes.
+	// participant_id is the participant's private re-join link; public_id is
+	// what other participants see.
+	for _, column := range []string{"participant_id", "public_id"} {
+		if err := backfillIDs(db, column); err != nil {
+			return err
+		}
 	}
 
-	// Create index for participant_id lookups (after backfill ensures no empty values)
-	_, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_bp_participant ON ballot_participants(ballot_id, participant_id) WHERE participant_id != ''`)
-	if err != nil && !strings.Contains(err.Error(), "already exists") {
-		return err
+	indexes := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_bp_participant ON ballot_participants(ballot_id, participant_id) WHERE participant_id != ''`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_bp_public ON ballot_participants(ballot_id, public_id) WHERE public_id != ''`,
+	}
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-// backfillParticipantIDs generates participant IDs for existing ballot_participants rows
-func backfillParticipantIDs(db *sql.DB) error {
-	rows, err := db.Query(`SELECT ballot_id, user_id FROM ballot_participants WHERE participant_id = ''`)
+// backfillIDs generates random IDs for ballot_participants rows where column
+// is empty. column must be a trusted identifier.
+func backfillIDs(db *sql.DB, column string) error {
+	rows, err := db.Query(`SELECT ballot_id, user_id FROM ballot_participants WHERE ` + column + ` = ''`)
 	if err != nil {
 		return err
 	}
@@ -138,16 +148,14 @@ func backfillParticipantIDs(db *sql.DB) error {
 		return err
 	}
 
-	// Update each row with a generated participant_id
-	stmt, err := db.Prepare(`UPDATE ballot_participants SET participant_id = ? WHERE ballot_id = ? AND user_id = ?`)
+	stmt, err := db.Prepare(`UPDATE ballot_participants SET ` + column + ` = ? WHERE ballot_id = ? AND user_id = ?`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, p := range participants {
-		participantID := util.GenerateShortID()
-		if _, err := stmt.Exec(participantID, p.ballotID, p.userID); err != nil {
+		if _, err := stmt.Exec(util.GenerateShortID(), p.ballotID, p.userID); err != nil {
 			return err
 		}
 	}

@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-current-user-id="{{.CurrentUser}}">
+<main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-current-public-id="{{.CurrentPublicID}}">
 <div class="container ballot">
     <div class="ballot-header">
         <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}" aria-label="Toggle ballot access - controls whether new participants can join">
@@ -50,7 +50,7 @@
         <ul class="participant-list" id="participant-list" style="display:none;">
             {{range .Participants}}
                 {{if .DisplayName}}
-                    <li class="participant-name" data-participant-id="{{.ParticipantID}}">{{.DisplayName}}</li>
+                    <li class="participant-name" data-public-id="{{.PublicID}}">{{.DisplayName}}</li>
                 {{end}}
             {{end}}
             {{if gt .AnonymousCount 0}}

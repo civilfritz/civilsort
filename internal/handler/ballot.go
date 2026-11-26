@@ -11,6 +11,7 @@ import (
 	"github.com/civilfritz/civilsort/internal/model"
 	"github.com/civilfritz/civilsort/internal/protocol"
 	"github.com/civilfritz/civilsort/internal/schulze"
+	"github.com/civilfritz/civilsort/internal/util"
 )
 
 // HandleHome shows the landing page with the create ballot form.
@@ -92,10 +93,10 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Check if current user is a participant
-	var currentParticipantID string
+	var currentParticipantID, currentPublicID string
 	err = h.db.QueryRowContext(r.Context(),
-		"SELECT participant_id FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
-		ballotID, userID).Scan(&currentParticipantID)
+		"SELECT participant_id, public_id FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
+		ballotID, userID).Scan(&currentParticipantID, &currentPublicID)
 	isParticipant := (err == nil)
 
 	if isParticipant {
@@ -216,7 +217,7 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		"Results":          results,
 		"IsOpen":           ballot.IsOpen,
 		"ParticipantCount": len(participants),
-		"ParticipantID":    currentParticipantID,
+		"CurrentPublicID":  currentPublicID,
 		"Participants":     participants,
 		"DisplayName":      displayName,
 		"AnonymousCount":   anonymousCount,
@@ -464,8 +465,8 @@ func (h *Handler) isParticipant(ctx context.Context, ballotID, userID string) (b
 func (h *Handler) addParticipant(ctx context.Context, ballotID, userID string) (string, bool, error) {
 	participantID := generateParticipantID()
 	result, err := h.db.ExecContext(ctx,
-		"INSERT OR IGNORE INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		ballotID, userID, participantID)
+		"INSERT OR IGNORE INTO ballot_participants (ballot_id, user_id, participant_id, public_id) VALUES (?, ?, ?, ?)",
+		ballotID, userID, participantID, util.GenerateShortID())
 	if err != nil {
 		return "", false, err
 	}
@@ -544,7 +545,8 @@ func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ball
 // getItems retrieves all items for a ballot with display names.
 func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, error) {
 	rows, err := h.db.QueryContext(ctx,
-		`SELECT i.id, i.ballot_id, i.name, i.added_by, i.created_at, COALESCE(bp.display_name, '')
+		`SELECT i.id, i.ballot_id, i.name, i.added_by, i.created_at,
+		        COALESCE(bp.display_name, ''), COALESCE(bp.public_id, '')
 		 FROM items i
 		 LEFT JOIN ballot_participants bp ON i.ballot_id = bp.ballot_id AND i.added_by = bp.user_id
 		 WHERE i.ballot_id = ?
@@ -558,7 +560,7 @@ func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, 
 	var items []model.Item
 	for rows.Next() {
 		var item model.Item
-		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt, &item.AddedByName); err != nil {
+		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt, &item.AddedByName, &item.AddedByPublicID); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -570,7 +572,7 @@ func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, 
 // Only includes participants who have set a name, added an item, or ranked items.
 func (h *Handler) getParticipants(ctx context.Context, ballotID string) ([]model.Participant, error) {
 	rows, err := h.db.QueryContext(ctx,
-		`SELECT bp.participant_id, bp.display_name
+		`SELECT bp.public_id, bp.display_name
 		 FROM ballot_participants bp
 		 WHERE bp.ballot_id = ?
 		 AND (
@@ -588,7 +590,7 @@ func (h *Handler) getParticipants(ctx context.Context, ballotID string) ([]model
 	var participants []model.Participant
 	for rows.Next() {
 		var p model.Participant
-		if err := rows.Scan(&p.ParticipantID, &p.DisplayName); err != nil {
+		if err := rows.Scan(&p.PublicID, &p.DisplayName); err != nil {
 			return nil, err
 		}
 		participants = append(participants, p)
@@ -710,18 +712,18 @@ func (h *Handler) snapshot(ctx context.Context, ballotID string) (ballotSnapshot
 	itemEntries := make([]protocol.ItemEntry, len(items))
 	for i, item := range items {
 		itemEntries[i] = protocol.ItemEntry{
-			ID:          item.ID,
-			Name:        item.Name,
-			AddedBy:     item.AddedBy,
-			AddedByName: item.AddedByName,
+			ID:              item.ID,
+			Name:            item.Name,
+			AddedByPublicID: item.AddedByPublicID,
+			AddedByName:     item.AddedByName,
 		}
 	}
 
 	participantEntries := make([]protocol.ParticipantEntry, len(participants))
 	for i, p := range participants {
 		participantEntries[i] = protocol.ParticipantEntry{
-			DisplayName:   p.DisplayName,
-			ParticipantID: p.ParticipantID,
+			DisplayName: p.DisplayName,
+			PublicID:    p.PublicID,
 		}
 	}
 
@@ -778,15 +780,27 @@ func (h *Handler) send(ballotID string, msg any) {
 }
 
 // HandleGetRankings returns a participant's ranked items in order.
+// Only participants of the ballot may view each other's rankings.
 func (h *Handler) HandleGetRankings(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
-	participantID := r.PathValue("participantID")
+	publicID := r.PathValue("publicID")
 
-	// Resolve participant_id to user_id
+	isParticipant, err := h.isParticipant(r.Context(), ballotID, UserID(r.Context()))
+	if err != nil {
+		log.Printf("Error checking participant: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !isParticipant {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Resolve public_id to user_id
 	var userID string
-	err := h.db.QueryRowContext(r.Context(),
-		"SELECT user_id FROM ballot_participants WHERE ballot_id = ? AND participant_id = ?",
-		ballotID, participantID).Scan(&userID)
+	err = h.db.QueryRowContext(r.Context(),
+		"SELECT user_id FROM ballot_participants WHERE ballot_id = ? AND public_id = ?",
+		ballotID, publicID).Scan(&userID)
 	if err == sql.ErrNoRows {
 		http.NotFound(w, r)
 		return
