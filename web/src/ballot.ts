@@ -250,6 +250,12 @@ class BallotPage {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
+            }).then(async response => {
+                // A 400 can happen when an item is deleted mid-save; the
+                // resulting items_changed message triggers a corrected save.
+                if (!response.ok) {
+                    console.error('Ranking not saved:', response.status, await response.text());
+                }
             }).catch((err: unknown) => {
                 console.error('Error saving ranking:', err);
                 showError('Failed to save ranking. Please try again.');

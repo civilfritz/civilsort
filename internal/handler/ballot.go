@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/civilfritz/civilsort/internal/model"
 	"github.com/civilfritz/civilsort/internal/protocol"
@@ -29,7 +31,7 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	title := r.FormValue("title")
+	title := cleanText(r.FormValue("title"), maxNameLength)
 	userID := UserID(r.Context())
 	ballotID := generateBallotID()
 
@@ -251,7 +253,7 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	itemName := r.FormValue("name")
+	itemName := cleanText(r.FormValue("name"), maxNameLength)
 	if itemName == "" {
 		http.Error(w, "Item name cannot be empty", http.StatusBadRequest)
 		return
@@ -342,6 +344,15 @@ func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	if msg, err := validateOrder(r.Context(), tx, ballotID, req.Order); err != nil {
+		log.Printf("Error validating ranking: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	} else if msg != "" {
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
 
 	// Delete existing rankings for this user on this ballot
 	_, err = tx.ExecContext(r.Context(),
@@ -437,11 +448,7 @@ func (h *Handler) HandleSetName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	displayName := r.FormValue("name")
-	// Trim and limit length
-	if len(displayName) > 50 {
-		displayName = displayName[:50]
-	}
+	displayName := cleanText(r.FormValue("name"), maxDisplayNameLength)
 
 	_, err = h.db.ExecContext(r.Context(),
 		"UPDATE ballot_participants SET display_name = ? WHERE ballot_id = ? AND user_id = ?",
@@ -856,4 +863,53 @@ func writeJSON(w http.ResponseWriter, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("Error writing JSON response: %v", err)
 	}
+}
+
+const (
+	maxNameLength        = 200 // ballot titles and item names
+	maxDisplayNameLength = 50
+)
+
+// cleanText trims s, replaces invalid UTF-8, and truncates it to at most limit
+// characters without splitting one.
+func cleanText(s string, limit int) string {
+	s = strings.TrimSpace(strings.ToValidUTF8(s, "\uFFFD"))
+	if utf8.RuneCountInString(s) <= limit {
+		return s
+	}
+	return strings.TrimSpace(string([]rune(s)[:limit]))
+}
+
+// validateOrder checks that order lists distinct items of ballotID. It returns
+// a client-facing message when the order is invalid.
+func validateOrder(ctx context.Context, tx *sql.Tx, ballotID string, order []int64) (string, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id FROM items WHERE ballot_id = ?", ballotID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	valid := make(map[int64]bool)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return "", err
+		}
+		valid[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	seen := make(map[int64]bool, len(order))
+	for _, id := range order {
+		if !valid[id] {
+			return fmt.Sprintf("Item %d is not on this ballot", id), nil
+		}
+		if seen[id] {
+			return fmt.Sprintf("Item %d is ranked more than once", id), nil
+		}
+		seen[id] = true
+	}
+	return "", nil
 }
