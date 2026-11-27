@@ -915,13 +915,17 @@ function setEmptyState(list: HTMLUListElement, text: string): void {
     list.appendChild(emptyLi);
 }
 
-// Updates the creator's Open/Closed button or everyone else's status label.
+// Updates the Open/Closed status and the creator's menu item.
 function updateToggleUI(isOpen: boolean): void {
-    for (const el of [byId('toggle-open-btn', HTMLElement), byId('ballot-status', HTMLElement)]) {
-        if (!el) continue;
-        el.textContent = isOpen ? 'Open' : 'Closed';
-        el.classList.toggle('toggle-open', isOpen);
-        el.classList.toggle('toggle-closed', !isOpen);
+    const status = byId('ballot-status', HTMLElement);
+    if (status) {
+        status.textContent = isOpen ? 'Open' : 'Closed';
+        status.classList.toggle('status-open', isOpen);
+        status.classList.toggle('status-closed', !isOpen);
+    }
+    const button = byId('toggle-open-btn', HTMLButtonElement);
+    if (button) {
+        button.textContent = isOpen ? 'Close to new participants' : 'Reopen to new participants';
     }
 }
 
@@ -939,8 +943,7 @@ function updateVisibilityUI(rankingsPrivate: boolean): void {
 }
 
 function isBallotOpen(): boolean {
-    const el = byId('toggle-open-btn', HTMLElement) ?? byId('ballot-status', HTMLElement);
-    return el?.classList.contains('toggle-open') ?? false;
+    return byId('ballot-status', HTMLElement)?.classList.contains('status-open') ?? false;
 }
 
 function updateTitle(title: string): void {

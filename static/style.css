@@ -457,37 +457,25 @@ h2 {
     }
 }
 
-/* Ballot toggle button */
-.toggle-btn {
+/* Ballot open/closed status */
+.status-pill {
     padding: 6px 16px;
     border: 2px solid;
     border-radius: 20px;
-    cursor: pointer;
     font-size: 14px;
     font-weight: 500;
-    transition: all 0.2s;
 }
 
-.toggle-open {
+.status-open {
     background: var(--success-bg);
     border-color: var(--success-border);
     color: var(--success-text);
 }
 
-.toggle-open:hover {
-    background: var(--success);
-    color: white;
-}
-
-.toggle-closed {
+.status-closed {
     background: var(--bg-surface-alt);
     border-color: var(--danger);
     color: var(--danger);
-}
-
-.toggle-closed:hover {
-    background: var(--danger);
-    color: white;
 }
 
 /* Stats page */
@@ -778,7 +766,7 @@ input:focus-visible,
         order: 1;
     }
 
-    .toggle-btn {
+    .status-pill {
         order: 2;
     }
 

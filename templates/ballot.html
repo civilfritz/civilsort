@@ -20,13 +20,7 @@
 <main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-role="{{.Role}}" data-current-participant-id="{{.CurrentParticipantID}}" data-rankings-private="{{.RankingsPrivate}}">
 <div class="container ballot">
     <div class="ballot-header">
-        {{if eq .Role "creator"}}
-        <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}" aria-label="Toggle whether new participants can join">
-            {{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}
-        </button>
-        {{else}}
-        <span id="ballot-status" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}" title="Whether new participants can join">{{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}</span>
-        {{end}}
+        <span id="ballot-status" class="status-pill {{if .Ballot.IsOpen}}status-open{{else}}status-closed{{end}}" title="Whether new participants can join">{{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}</span>
         <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
         <div class="menu-wrapper" id="menu-wrapper">
             <button class="hamburger-menu" id="hamburger-menu" aria-label="Menu">☰</button>
@@ -39,6 +33,7 @@
                     <button class="menu-item" id="device-link-btn" data-link="{{.JoinLink}}" aria-label="Copy your personal link for using this ballot on another device">Use on another device</button>
                     {{end}}
                     {{if eq .Role "creator"}}
+                    <button class="menu-item" id="toggle-open-btn">{{if .Ballot.IsOpen}}Close to new participants{{else}}Reopen to new participants{{end}}</button>
                     <button class="menu-item" id="edit-title-btn">Edit title</button>
                     <button class="menu-item" id="visibility-btn">{{if .RankingsPrivate}}Make rankings visible{{else}}Make rankings private{{end}}</button>
                     <button class="menu-item menu-item-danger" id="delete-ballot-btn">Delete ballot</button>
