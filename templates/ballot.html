@@ -27,7 +27,7 @@
             <div class="menu-dropdown" id="menu-dropdown">
                 <nav class="menu-nav">
                     <a href="/" class="menu-item">New Ballot</a>
-                    <button class="menu-item" id="share-url-btn" aria-label="Share ballot">Share</button>
+                    <button class="menu-item" id="share-url-btn" data-keep-menu-open aria-label="Share ballot">Share</button>
                     {{if ne .Role "viewer"}}
                     <button class="menu-item" id="device-link-btn" data-link="{{.JoinLink}}" aria-label="Copy your personal link for using this ballot on another device">Use on another device</button>
                     {{end}}
