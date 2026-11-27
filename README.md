@@ -7,7 +7,7 @@ A web application for ranked-choice voting with real-time results. Uses the Schu
 - **No login required** - Each ballot remembers its participants with a cookie scoped to that ballot
 - **Unique ballot URLs** - Anyone with a ballot's URL can watch it live; joining takes a name
 - **Creator controls** - The creator opens or closes the ballot to new participants, edits the title, recovers or resets participants' links, removes participants, and can delete the ballot
-- **Private rankings** - The creator can hide individual rankings so only combined results are shown
+- **Private rankings** - The creator can hide individual rankings so only combined results are shown, from the top of the participant list (eye for visible, incognito for private)
 - **Add device** - Each participant can show a personal link, as a QR code or a link to copy, that signs another browser in as them
 - **Collaborative item management** - Any participant can add items and delete their own until someone else ranks them
 - **Delete confirmation** - Prompts "Are you sure?" before deleting items

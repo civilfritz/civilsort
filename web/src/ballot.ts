@@ -65,6 +65,7 @@ abstract class LiveBallot {
     init(): void {
         this.cachedParticipants = this.readInitialParticipants();
         this.initParticipantList();
+        this.updateParticipantList(this.cachedParticipants); // adds the visibility row
         this.initShare();
         this.connectWebSocket();
     }
@@ -149,8 +150,10 @@ abstract class LiveBallot {
                 this.rankingsMayHaveChanged();
                 break;
             case 'state_changed':
-                this.rankingsPrivate = msg.rankingsPrivate;
-                updateVisibilityUI(msg.rankingsPrivate);
+                if (msg.rankingsPrivate !== this.rankingsPrivate) {
+                    this.rankingsPrivate = msg.rankingsPrivate;
+                    this.updateVisibility();
+                }
                 this.stateChanged(msg.isOpen, msg.title);
                 break;
             case 'participants_changed':
@@ -319,9 +322,40 @@ abstract class LiveBallot {
     }
 
     private updateParticipantCount(count: number): void {
-        if (this.participantToggle) {
-            this.participantToggle.textContent = count === 1 ? '1 participant' : `${count} participants`;
+        const text = this.participantToggle?.querySelector('.participant-count-text');
+        if (text) {
+            text.textContent = count === 1 ? '1 participant' : `${count} participants`;
         }
+    }
+
+    // --- Rankings visibility ---
+
+    // Shows the visibility icon on the participant count and updates the
+    // list's visibility row.
+    private updateVisibility(): void {
+        const toggle = this.participantToggle;
+        if (toggle) {
+            toggle.title = visibilityText(this.rankingsPrivate);
+            toggle.querySelector('.vis-icon use')?.setAttribute('href', visibilityIcon(this.rankingsPrivate));
+            const sr = toggle.querySelector('.vis-text');
+            if (sr) sr.textContent = this.rankingsPrivate ? '(rankings private)' : '(rankings visible)';
+        }
+        const row = this.participantList?.querySelector<HTMLLIElement>('.visibility-row');
+        if (row) this.syncVisibilityRow(row);
+    }
+
+    // Brings an existing visibility row up to date.
+    protected syncVisibilityRow(row: HTMLLIElement): void {
+        row.replaceWith(this.visibilityRow());
+    }
+
+    // The first row of the participant list: whether rankings are visible.
+    protected visibilityRow(): HTMLLIElement {
+        const li = document.createElement('li');
+        li.className = 'visibility-row';
+        li.title = visibilityText(this.rankingsPrivate);
+        li.append(iconSvg(visibilityIcon(this.rankingsPrivate)), this.rankingsPrivate ? 'Rankings are private' : 'Rankings are visible');
+        return li;
     }
 
     protected updateParticipantList(participants: ParticipantEntry[]): void {
@@ -331,7 +365,7 @@ abstract class LiveBallot {
         this.cachedParticipants = participants;
         if (!this.canRenderParticipantList()) return;
 
-        list.innerHTML = '';
+        list.replaceChildren(this.visibilityRow());
         let anonymousCount = 0;
 
         for (const p of participants) {
@@ -442,8 +476,6 @@ class ParticipantPage extends LiveBallot {
         if (this.isCreator) {
             this.initToggleOpen();
             this.initCreatorMenu();
-            // Re-render the server-rendered list with the creator's controls.
-            this.updateParticipantList(this.cachedParticipants);
         }
     }
 
@@ -917,10 +949,57 @@ class ParticipantPage extends LiveBallot {
         });
     }
 
+    // The creator's visibility row is a switch whose knob slides between the
+    // eye (visible) and incognito (private).
+    protected override visibilityRow(): HTMLLIElement {
+        if (!this.isCreator) return super.visibilityRow();
+        const li = document.createElement('li');
+        li.className = 'visibility-row';
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'vis-switch';
+        button.setAttribute('role', 'switch');
+        button.setAttribute('aria-label', 'Private rankings');
+
+        const track = document.createElement('span');
+        track.className = 'vis-switch-track';
+        const knob = document.createElement('span');
+        knob.className = 'vis-switch-knob';
+        const eye = iconSvg(visibilityIcon(false));
+        eye.classList.add('knob-visible');
+        const incognito = iconSvg(visibilityIcon(true));
+        incognito.classList.add('knob-private');
+        knob.append(eye, incognito);
+        track.appendChild(knob);
+
+        const label = document.createElement('span');
+        label.className = 'vis-switch-label';
+        label.setAttribute('aria-hidden', 'true'); // the switch's aria-label says it
+        label.textContent = 'Private rankings';
+
+        button.append(track, label);
+        li.appendChild(button);
+        setVisibilitySwitch(button, this.rankingsPrivate);
+        return li;
+    }
+
+    // Flips the switch in place so its CSS transitions animate.
+    protected override syncVisibilityRow(row: HTMLLIElement): void {
+        const button = row.querySelector<HTMLButtonElement>('.vis-switch');
+        if (button) {
+            setVisibilitySwitch(button, this.rankingsPrivate);
+        } else {
+            super.syncVisibilityRow(row);
+        }
+    }
+
     private initCreatorMenu(): void {
         this.initTitleEdit();
 
-        byId('visibility-btn', HTMLButtonElement)?.addEventListener('click', () => {
+        // The switch moves when the server's state_changed message arrives.
+        this.participantList?.addEventListener('click', (e) => {
+            if (!(e.target as Element | null)?.closest('.vis-switch')) return;
             const makePrivate = !this.rankingsPrivate;
             if (makePrivate && !confirm('Make rankings private? Once anyone else ranks, they can\'t be made visible again.')) {
                 return;
@@ -1103,17 +1182,32 @@ function updateToggleUI(isOpen: boolean): void {
     lock.title = label;
 }
 
-function updateVisibilityUI(rankingsPrivate: boolean): void {
-    const note = byId('visibility-note', HTMLElement);
-    if (note) {
-        note.textContent = rankingsPrivate
-            ? 'Rankings are private; only the combined results are shown.'
-            : 'Rankings are visible to all participants.';
-    }
-    const button = byId('visibility-btn', HTMLButtonElement);
-    if (button) {
-        button.textContent = rankingsPrivate ? 'Make rankings visible' : 'Make rankings private';
-    }
+function visibilityText(rankingsPrivate: boolean): string {
+    return rankingsPrivate
+        ? 'Rankings are private; only the combined results are shown'
+        : 'Rankings are visible to all participants';
+}
+
+// Eye for visible rankings, incognito (hat and glasses) for private.
+function visibilityIcon(rankingsPrivate: boolean): string {
+    return rankingsPrivate ? '#icon-incognito' : '#icon-eye';
+}
+
+function setVisibilitySwitch(button: HTMLButtonElement, rankingsPrivate: boolean): void {
+    button.setAttribute('aria-checked', String(rankingsPrivate));
+    button.title = visibilityText(rankingsPrivate);
+}
+
+// An inline icon referencing a symbol in the page's SVG sprite.
+function iconSvg(href: string): SVGSVGElement {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'vis-icon');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(ns, 'use');
+    use.setAttribute('href', href);
+    svg.appendChild(use);
+    return svg;
 }
 
 function isBallotOpen(): boolean {

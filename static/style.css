@@ -713,6 +713,108 @@ button.lock {
     background: var(--bg-surface-alt);
 }
 
+.vis-icon {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    vertical-align: -3px;
+}
+
+.participant-count .vis-icon {
+    margin-right: 2px;
+}
+
+.ballot .participant-list .visibility-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px 10px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.ballot .participant-list .visibility-row:hover {
+    background: transparent;
+}
+
+/* Creator's visibility switch: the knob slides right and its eye turns
+   into the incognito icon when rankings become private. */
+.vis-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.vis-switch-track {
+    position: relative;
+    flex: none;
+    width: 46px;
+    height: 26px;
+    border-radius: 13px;
+    background: var(--border);
+    transition: background 0.3s cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.vis-switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    color: #555;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: transform 0.3s cubic-bezier(0.65, 0, 0.35, 1), color 0.3s;
+}
+
+.vis-switch-knob .vis-icon {
+    grid-area: 1 / 1;
+    width: 14px;
+    height: 14px;
+    vertical-align: 0;
+    transition: opacity 0.3s, transform 0.3s cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.vis-switch-knob .knob-private {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.5);
+}
+
+.vis-switch[aria-checked="true"] .vis-switch-track {
+    background: var(--primary);
+}
+
+.vis-switch[aria-checked="true"] .vis-switch-knob {
+    transform: translateX(20px);
+    color: var(--primary);
+}
+
+.vis-switch[aria-checked="true"] .knob-visible {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.5);
+}
+
+.vis-switch[aria-checked="true"] .knob-private {
+    opacity: 1;
+    transform: none;
+}
+
+.vis-switch:focus-visible .vis-switch-track {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
 .ballot .participant-list .anonymous-label {
     color: var(--text-subtle);
     font-style: italic;
@@ -847,7 +949,10 @@ input:focus-visible,
     .slideDown,
     .toast,
     .lock,
-    .lock-shackle {
+    .lock-shackle,
+    .vis-switch-track,
+    .vis-switch-knob,
+    .vis-switch-knob .vis-icon {
         animation: none;
         transition: none;
     }

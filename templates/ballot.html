@@ -19,6 +19,10 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="icon-incognito" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11h20"/><path d="M5 11l2-6.5h10l2 6.5"/><circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/><path d="M10 17h4"/></symbol>
+</svg>
 <main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-role="{{.Role}}" data-current-participant-id="{{.CurrentParticipantID}}" data-rankings-private="{{.RankingsPrivate}}">
 <div class="container ballot">
     <div class="ballot-header">
@@ -43,7 +47,6 @@
                     <button class="menu-item" id="device-link-btn" data-link="{{.JoinLink}}" aria-label="Show your personal link for signing in on another device">Add device</button>
                     {{end}}
                     {{if eq .Role "creator"}}
-                    <button class="menu-item" id="visibility-btn">{{if .RankingsPrivate}}Make rankings visible{{else}}Make rankings private{{end}}</button>
                     <button class="menu-item menu-item-danger" id="delete-ballot-btn">Delete ballot</button>
                     {{end}}
                     <button class="menu-item theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">Light/Dark</button>
@@ -78,8 +81,10 @@
     {{end}}
 
     <div class="participant-info">
-        <button type="button" class="participant-count" id="participant-toggle">
-            {{if eq .ParticipantCount 1}}1 participant{{else}}{{.ParticipantCount}} participants{{end}}
+        <button type="button" class="participant-count" id="participant-toggle" title="{{if .RankingsPrivate}}Rankings are private; only the combined results are shown{{else}}Rankings are visible to all participants{{end}}">
+            <svg class="vis-icon" aria-hidden="true"><use href="{{if .RankingsPrivate}}#icon-incognito{{else}}#icon-eye{{end}}"/></svg>
+            <span class="participant-count-text">{{if eq .ParticipantCount 1}}1 participant{{else}}{{.ParticipantCount}} participants{{end}}</span>
+            <span class="sr-only vis-text">{{if .RankingsPrivate}}(rankings private){{else}}(rankings visible){{end}}</span>
         </button>
         <ul class="participant-list" id="participant-list" style="display:none;">
             {{range .Participants}}
@@ -91,7 +96,6 @@
                 <li class="anonymous-label">{{if eq .AnonymousCount 1}}1 anonymous{{else}}{{.AnonymousCount}} anonymous{{end}}</li>
             {{end}}
         </ul>
-        <p class="help-text" id="visibility-note">{{if .RankingsPrivate}}Rankings are private; only the combined results are shown.{{else}}Rankings are visible to all participants.{{end}}</p>
     </div>
 
     <div class="tabs" role="tablist">
