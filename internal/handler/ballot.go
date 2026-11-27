@@ -115,9 +115,10 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	}
 	byID := make(map[int64]itemView, len(items))
 	for _, item := range items {
-		// Shown on own items and, for the creator, on all; the server also
-		// refuses non-creators once someone else has ranked the item.
-		byID[item.ID] = itemView{Item: item, CanDelete: current.IsCreator || (isParticipant && item.AddedBy == current.ID)}
+		// The creator can delete anything; others their own items until
+		// someone else ranks them (also enforced in HandleDeleteItem).
+		ownDeletable := isParticipant && item.AddedBy == current.ID && !item.RankedByOthers
+		byID[item.ID] = itemView{Item: item, CanDelete: current.IsCreator || ownDeletable}
 	}
 	rankedItems := make([]itemView, 0, len(rankings))
 	for _, ranking := range rankings { // already in position order
@@ -436,7 +437,8 @@ func (h *Handler) loadBallot(w http.ResponseWriter, r *http.Request, ballotID st
 // getItems retrieves all items for a ballot with display names.
 func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, error) {
 	rows, err := h.db.QueryContext(ctx,
-		`SELECT i.id, i.ballot_id, i.name, i.added_by, i.created_at, COALESCE(p.display_name, '')
+		`SELECT i.id, i.ballot_id, i.name, i.added_by, i.created_at, COALESCE(p.display_name, ''),
+		        EXISTS(SELECT 1 FROM rankings r WHERE r.item_id = i.id AND r.participant_id != i.added_by)
 		 FROM items i
 		 LEFT JOIN participants p
 		   ON p.ballot_id = i.ballot_id AND p.id = i.added_by AND p.removed_at IS NULL
@@ -451,7 +453,7 @@ func (h *Handler) getItems(ctx context.Context, ballotID string) ([]model.Item, 
 	var items []model.Item
 	for rows.Next() {
 		var item model.Item
-		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt, &item.AddedByName); err != nil {
+		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt, &item.AddedByName, &item.RankedByOthers); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -604,10 +606,11 @@ func (h *Handler) snapshot(ctx context.Context, ballotID string) (ballotSnapshot
 	itemEntries := make([]protocol.ItemEntry, len(items))
 	for i, item := range items {
 		itemEntries[i] = protocol.ItemEntry{
-			ID:          item.ID,
-			Name:        item.Name,
-			AddedBy:     item.AddedBy,
-			AddedByName: item.AddedByName,
+			ID:             item.ID,
+			Name:           item.Name,
+			AddedBy:        item.AddedBy,
+			AddedByName:    item.AddedByName,
+			RankedByOthers: item.RankedByOthers,
 		}
 	}
 
@@ -633,7 +636,7 @@ func (h *Handler) broadcastResults(ctx context.Context, ballotID string) {
 		log.Printf("Error building results broadcast: %v", err)
 		return
 	}
-	h.send(ballotID, protocol.NewResultsMessage(s.results, len(s.participants)))
+	h.send(ballotID, protocol.NewResultsMessage(s.results, s.items, len(s.participants)))
 }
 
 // broadcastItemsChanged broadcasts the item list after an add or delete.

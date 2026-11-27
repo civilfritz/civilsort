@@ -40,6 +40,12 @@ export interface ItemEntry {
   name: string;
   addedBy: string; // participant ID
   addedByName: string;
+  /**
+   * RankedByOthers reports whether anyone other than the adder has ranked
+   * the item. It's the same for every recipient: only the adder uses it,
+   * to know their Delete button no longer applies.
+   */
+  rankedByOthers: boolean;
 }
 /**
  * ParticipantEntry is a ballot participant for client-side rendering.
@@ -49,11 +55,13 @@ export interface ParticipantEntry {
   participantId: string;
 }
 /**
- * ResultsMessage is sent when rankings change.
+ * ResultsMessage is sent when rankings change. Items are included because
+ * their RankedByOthers flags may have changed.
  */
 export interface ResultsMessage {
   type: "results";
   results: ResultEntry[];
+  items: ItemEntry[];
   participantCount: number /* int */;
 }
 /**

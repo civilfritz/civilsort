@@ -143,7 +143,7 @@ abstract class LiveBallot {
                 this.rankingsMayHaveChanged();
                 break;
             case 'results':
-                this.updateResultsList(msg.results);
+                this.updateItems(msg.items, msg.results);
                 this.updateParticipantCount(msg.participantCount);
                 this.rankingsMayHaveChanged();
                 break;
@@ -513,6 +513,7 @@ class ParticipantPage extends LiveBallot {
             } else {
                 attrSpan?.remove();
             }
+            this.syncDeleteForm(metaSpan, item);
         }
 
         // Add new items to unranked zone
@@ -550,18 +551,32 @@ class ParticipantPage extends LiveBallot {
             attrSpan.textContent = item.addedByName;
             metaSpan.appendChild(attrSpan);
         }
-
-        // Add delete button on own items, or on all items for the creator
-        if (this.isCreator || item.addedBy === this.participantId) {
-            const deleteForm = document.createElement('form');
-            deleteForm.method = 'POST';
-            deleteForm.action = `/ballot/${this.ballotId}/items/${item.id}/delete`;
-            deleteForm.className = 'delete-form';
-            deleteForm.innerHTML = '<button type="submit" class="delete-btn">Delete</button>';
-            metaSpan.appendChild(deleteForm);
-        }
+        this.syncDeleteForm(metaSpan, item);
 
         return li;
+    }
+
+    // The creator can delete anything; others their own items until someone
+    // else ranks them. The server enforces the same rule.
+    private canDelete(item: ItemEntry): boolean {
+        return this.isCreator || (item.addedBy === this.participantId && !item.rankedByOthers);
+    }
+
+    // Adds or removes an item's Delete button to match canDelete.
+    private syncDeleteForm(metaSpan: Element, item: ItemEntry): void {
+        const existing = metaSpan.querySelector('.delete-form');
+        if (!this.canDelete(item)) {
+            existing?.remove();
+            return;
+        }
+        if (existing) return;
+
+        const deleteForm = document.createElement('form');
+        deleteForm.method = 'POST';
+        deleteForm.action = `/ballot/${this.ballotId}/items/${item.id}/delete`;
+        deleteForm.className = 'delete-form';
+        deleteForm.innerHTML = '<button type="submit" class="delete-btn">Delete</button>';
+        metaSpan.appendChild(deleteForm);
     }
 
     private updateEmptyStates(): void {

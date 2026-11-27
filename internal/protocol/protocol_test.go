@@ -13,8 +13,8 @@ func TestMessagesEncode(t *testing.T) {
 	}{
 		{
 			name: "results",
-			msg:  NewResultsMessage(nil, 0),
-			want: `{"type":"results","results":[],"participantCount":0}`,
+			msg:  NewResultsMessage(nil, nil, 0),
+			want: `{"type":"results","results":[],"items":[],"participantCount":0}`,
 		},
 		{
 			name: "items_changed",
@@ -38,7 +38,7 @@ func TestMessagesEncode(t *testing.T) {
 				[]ItemEntry{{ID: 1, Name: "A", AddedBy: "p", AddedByName: "U"}},
 				[]ParticipantEntry{{DisplayName: "U", ParticipantID: "p"}},
 			),
-			want: `{"type":"participants_changed","results":[{"rank":1,"name":"A"}],"items":[{"id":1,"name":"A","addedBy":"p","addedByName":"U"}],"participants":[{"displayName":"U","participantId":"p"}],"participantCount":1}`,
+			want: `{"type":"participants_changed","results":[{"rank":1,"name":"A"}],"items":[{"id":1,"name":"A","addedBy":"p","addedByName":"U","rankedByOthers":false}],"participants":[{"displayName":"U","participantId":"p"}],"participantCount":1}`,
 		},
 	}
 

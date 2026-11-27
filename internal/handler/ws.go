@@ -41,7 +41,7 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Send current results immediately
 	if snap, err := h.snapshot(r.Context(), ballotID); err != nil {
 		log.Printf("Error building initial results: %v", err)
-	} else if data, err := json.Marshal(protocol.NewResultsMessage(snap.results, len(snap.participants))); err == nil {
+	} else if data, err := json.Marshal(protocol.NewResultsMessage(snap.results, snap.items, len(snap.participants))); err == nil {
 		client.Send(data)
 	}
 

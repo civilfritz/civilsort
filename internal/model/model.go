@@ -19,6 +19,10 @@ type Item struct {
 	AddedBy     string // participant ID
 	AddedByName string
 	CreatedAt   time.Time
+
+	// RankedByOthers reports whether anyone other than the adder has ranked
+	// the item; once they have, only the creator can delete it.
+	RankedByOthers bool
 }
 
 // Ranking represents one participant's ranking of one item.

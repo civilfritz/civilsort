@@ -40,6 +40,11 @@ type ItemEntry struct {
 	Name        string `json:"name"`
 	AddedBy     string `json:"addedBy"` // participant ID
 	AddedByName string `json:"addedByName"`
+
+	// RankedByOthers reports whether anyone other than the adder has ranked
+	// the item. It's the same for every recipient: only the adder uses it,
+	// to know their Delete button no longer applies.
+	RankedByOthers bool `json:"rankedByOthers"`
 }
 
 // ParticipantEntry is a ballot participant for client-side rendering.
@@ -48,10 +53,12 @@ type ParticipantEntry struct {
 	ParticipantID string `json:"participantId"`
 }
 
-// ResultsMessage is sent when rankings change.
+// ResultsMessage is sent when rankings change. Items are included because
+// their RankedByOthers flags may have changed.
 type ResultsMessage struct {
 	Type             MessageType   `json:"type" tstype:"\"results\""`
 	Results          []ResultEntry `json:"results"`
+	Items            []ItemEntry   `json:"items"`
 	ParticipantCount int           `json:"participantCount"`
 }
 
@@ -107,10 +114,11 @@ type RankedItem struct {
 	Name string `json:"name"`
 }
 
-func NewResultsMessage(results []ResultEntry, participantCount int) ResultsMessage {
+func NewResultsMessage(results []ResultEntry, items []ItemEntry, participantCount int) ResultsMessage {
 	return ResultsMessage{
 		Type:             TypeResults,
 		Results:          nonNil(results),
+		Items:            nonNil(items),
 		ParticipantCount: participantCount,
 	}
 }

@@ -204,3 +204,32 @@ func TestHandleSetName_NotParticipant(t *testing.T) {
 		t.Errorf("Expected status 401, got %d", rec.Code)
 	}
 }
+
+func TestGetItems_RankedByOthers(t *testing.T) {
+	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
+	member := join(t, h, ballotID)
+	selfRanked := insertItem(t, h.db, ballotID, "Self ranked", member.ID)
+	othersRanked := insertItem(t, h.db, ballotID, "Others ranked", member.ID)
+	for _, r := range []struct {
+		who  string
+		item int64
+	}{{member.ID, selfRanked}, {creator.ID, othersRanked}} {
+		if _, err := h.db.Exec("INSERT INTO rankings (ballot_id, participant_id, item_id, position) VALUES (?, ?, ?, 1)",
+			ballotID, r.who, r.item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	items, err := h.getItems(t.Context(), ballotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]bool{}
+	for _, item := range items {
+		got[item.ID] = item.RankedByOthers
+	}
+	if got[selfRanked] || !got[othersRanked] {
+		t.Errorf("RankedByOthers: self-ranked=%v (want false), others-ranked=%v (want true)", got[selfRanked], got[othersRanked])
+	}
+}
