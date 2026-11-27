@@ -369,7 +369,9 @@ h2 {
     margin-bottom: 8px;
     background: var(--bg-surface);
     cursor: grab;
+    -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .ranked-item:active {
