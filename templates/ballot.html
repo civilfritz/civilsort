@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}} - civilsort</title>
+    <title>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}} — civilsort</title>
     <script>
     (function() {
         var saved = localStorage.getItem('theme');
@@ -36,7 +36,7 @@
             title="{{if .Ballot.IsOpen}}Open to new participants{{else}}Closed to new participants{{end}}">{{template "lock-icon"}}</span>
         {{end}}
         <h1><span id="ballot-title" data-title="{{.Ballot.Title}}">{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</span>
-            {{- if eq .Role "creator"}}<button type="button" id="edit-title-btn" class="edit-title-btn" aria-label="Edit title" title="Edit title"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>{{end}}</h1>
+            {{- if eq .Role "creator"}}<button type="button" id="edit-title-btn" class="edit-title-btn" aria-label="Edit ballot title" title="Edit ballot title"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>{{end}}</h1>
         <div class="menu-wrapper" id="menu-wrapper">
             <button class="hamburger-menu" id="hamburger-menu" aria-label="Menu">☰</button>
             <div class="menu-dropdown" id="menu-dropdown">
@@ -75,8 +75,8 @@
     </div>
     {{else}}
     <div class="your-name-row">
-        <label for="display-name" class="sr-only">Your display name (visible to other participants)</label>
-        <input type="text" id="display-name" placeholder="Your name (visible to others)" maxlength="50" value="{{.DisplayName}}" autocomplete="off">
+        <label for="display-name" class="sr-only">Your name (visible to other participants)</label>
+        <input type="text" id="display-name" placeholder="Your name" maxlength="50" value="{{.DisplayName}}" autocomplete="off">
     </div>
     {{end}}
 
@@ -99,7 +99,7 @@
     </div>
 
     <div class="tabs" role="tablist">
-        <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="ballot-tab" data-tab="ballot-tab">Ballot</button>
+        <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="ballot-tab" data-tab="ballot-tab">Rankings</button>
         <button class="tab-btn" role="tab" aria-selected="false" aria-controls="results-tab" data-tab="results-tab">Results</button>
     </div>
 
@@ -129,7 +129,7 @@
         <h2 class="zone-label">Unranked (no preference)</h2>
         <ul id="unranked-list" class="ranking-list unranked-zone">
             {{range .UnrankedItems}}{{template "ballot-item" .}}{{else}}
-            <li class="empty-state">Add items below - unranked items won't affect results</li>
+            <li class="empty-state">Add items below — unranked items don't affect results</li>
             {{end}}
         </ul>
 
@@ -142,7 +142,7 @@
 
     <div id="results-tab" class="tab-panel" role="tabpanel" aria-labelledby="results-tab">
         <h2>Results</h2>
-        <p class="help-text">Rankings computed using the <a href="/about?from={{.Ballot.ID}}" target="_blank" rel="noopener noreferrer">Schulze method</a> - a fair, cycle-resistant voting algorithm.</p>
+        <p class="help-text">Rankings computed using the <a href="/about?from={{.Ballot.ID}}" target="_blank" rel="noopener noreferrer">Schulze method</a> — a fair, cycle-resistant voting algorithm.</p>
         <ul id="results-list" class="results-list">
             {{range .Results}}
             <li data-item-id="{{.ItemID}}">#{{.Rank}}: {{.Name}}</li>
@@ -168,8 +168,8 @@
 <dialog id="remove-dialog" class="app-dialog remove-dialog">
     <form method="dialog">
         <p>Remove <strong id="remove-name"></strong> from this ballot? Their link will stop working.</p>
-        <label><input type="checkbox" name="rankings" value="1"> Also delete their rankings</label>
-        <label><input type="checkbox" name="items" value="1"> Also delete the items they added</label>
+        <label><input type="checkbox" name="rankings" value="1"> Also remove their rankings</label>
+        <label><input type="checkbox" name="items" value="1"> Also remove the items they added</label>
         <p class="help-text" id="remove-note"></p>
         <div class="dialog-buttons">
             <button value="cancel" formnovalidate>Cancel</button>
@@ -197,7 +197,7 @@
             {{- else}}<button type="button" class="move-btn" aria-label="Add to ranked" title="Add to ranked">+</button>{{end}}
             {{if .CanDelete}}
             <form method="POST" action="/ballot/{{.BallotID}}/items/{{.ID}}/delete" class="delete-form">
-                <button type="submit" class="delete-btn" aria-label="Delete" title="Delete">✕</button>
+                <button type="submit" class="delete-btn" aria-label="Remove" title="Remove">✕</button>
             </form>
             {{end}}
         </span>

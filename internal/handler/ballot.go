@@ -35,7 +35,7 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 	title := cleanText(r.FormValue("title"), maxNameLength)
 	name := cleanText(r.FormValue("name"), maxDisplayNameLength)
 	if name == "" {
-		http.Error(w, "Please enter your name.", http.StatusBadRequest)
+		http.Error(w, "Name required", http.StatusBadRequest)
 		return
 	}
 	ballotID := generateBallotID()
@@ -206,7 +206,7 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 
 	itemName := cleanText(r.FormValue("name"), maxNameLength)
 	if itemName == "" {
-		http.Error(w, "Item name cannot be empty", http.StatusBadRequest)
+		http.Error(w, "Item name required", http.StatusBadRequest)
 		return
 	}
 
@@ -215,7 +215,7 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 		ballotID, itemName, current.ID)
 	if err != nil {
 		log.Printf("Error adding item: %v", err)
-		http.Error(w, "Could not add item (duplicate name?)", http.StatusBadRequest)
+		http.Error(w, "Couldn't add item (duplicate name?)", http.StatusBadRequest)
 		return
 	}
 
@@ -254,7 +254,7 @@ func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	// until another participant has ranked them.
 	if !current.IsCreator {
 		if addedBy != current.ID {
-			http.Error(w, "You can only delete items you added", http.StatusForbidden)
+			http.Error(w, "You can only remove items you added", http.StatusForbidden)
 			return
 		}
 		var rankedByOthers bool
@@ -267,7 +267,7 @@ func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if rankedByOthers {
-			http.Error(w, "Someone else has ranked this item. Ask the ballot's creator to delete it.", http.StatusForbidden)
+			http.Error(w, "Someone else has ranked this item; ask the ballot's creator to remove it", http.StatusForbidden)
 			return
 		}
 	}
@@ -698,7 +698,7 @@ func (h *Handler) HandleGetRankings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ballot.RankingsPrivate && targetID != current.ID {
-		http.Error(w, "Rankings on this ballot are private.", http.StatusForbidden)
+		http.Error(w, "Rankings on this ballot are private", http.StatusForbidden)
 		return
 	}
 

@@ -5,15 +5,15 @@ A web application for ranked-choice voting with real-time results. Uses the Schu
 ## Features
 
 - **No login required** - Each ballot remembers its participants with a cookie scoped to that ballot
-- **Unique ballot URLs** - Anyone with a ballot's URL can watch it live; joining takes a name
+- **Unique ballot addresses** - Anyone with a ballot's address can watch it live; joining takes a name
 - **Creator controls** - The creator opens or closes the ballot to new participants, edits the title, recovers or resets participants' links, removes participants, and can delete the ballot
 - **Private rankings** - The creator can hide individual rankings so only combined results are shown, from the top of the participant list (eye for visible, incognito for private)
 - **Add device** - Each participant can show a personal link, as a QR code or a link to copy, that signs another browser in as them
-- **Collaborative item management** - Any participant can add items and delete their own until someone else ranks them
-- **Delete confirmation** - Prompts "Are you sure?" before deleting items
+- **Collaborative item management** - Any participant can add items and remove their own until someone else ranks them
+- **Remove confirmation** - Prompts "Are you sure?" before removing items
 - **Drag-and-drop ranking** - Intuitive interface using SortableJS
 - **Real-time results** - Results update live across all connected browsers via WebSockets
-- **Dynamic updates** - Items added/deleted by other users update in-place without losing scroll position or input text
+- **Dynamic updates** - Items added/removed by other users update in-place without losing scroll position or input text
 - **Dark/light mode** - Toggle with system preference detection and localStorage persistence
 - **Schulze algorithm** - Implements the Schulze method for computing the final ranking
 - **Hidden stats page** - De-identified aggregate statistics at `/stats`
@@ -32,7 +32,7 @@ A web application for ranked-choice voting with real-time results. Uses the Schu
    http://localhost:8080
    ```
 
-3. **Create a ballot**, add items, and share the URL with participants!
+3. **Create a ballot**, add items, and share its address with participants!
 
 ## Architecture
 
@@ -70,9 +70,9 @@ civilfritz-voting/
 
 ### User Flow
 1. Create a ballot from the homepage with your name and an optional title. You're its creator.
-2. Share the ballot's URL from the address bar, or with **Share** in the menu (☰), which shows it as a QR code for others to scan and as a link to copy.
-3. Anyone with the URL sees the ballot as a **viewer**: items, live results, and who's participating. While the ballot is **Open**, viewers can **Join** by entering a name.
-4. **Participants** add items, drag them into the Ranked zone (or tap **+** to add one to the bottom; **−** unranks it), and rename themselves. They can delete items they added until someone else ranks them.
+2. Share the ballot's address from the address bar, or with **Share** in the menu (☰), which shows it as a QR code for others to scan and as a link to copy.
+3. Anyone with the address sees the ballot as a **viewer**: items, live results, and who's participating. While the ballot is **Open**, viewers can **Join** by entering a name.
+4. **Participants** add items, drag them into the Ranked zone (or tap **+** to add one to the bottom; **−** unranks it), and rename themselves. They can remove items they added until someone else ranks them.
 5. The Results tab shows the live Schulze ranking.
 
 ### Roles
@@ -82,7 +82,7 @@ civilfritz-voting/
 | Join (while open) | ✓ | | |
 | Add items, rank, rename self | | ✓ | ✓ |
 | View others' rankings (unless private) | | ✓ | ✓ |
-| Delete items | | own, until someone else ranks them | any |
+| Remove items | | own, until someone else ranks them | any |
 | Lock/unlock joining (the padlock), edit title, make rankings private | | | ✓ |
 | Copy, reset, or remove participants; delete ballot | | | ✓ |
 

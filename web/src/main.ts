@@ -84,10 +84,6 @@ function initThemeToggle(): void {
     if (!themeToggle) return;
 
     const currentTheme = (): string => document.documentElement.dataset['theme'] || 'light';
-    const updateLabel = (): void => {
-        themeToggle.textContent = currentTheme() === 'dark' ? 'Light mode' : 'Dark mode';
-    };
-    updateLabel();
 
     themeToggle.addEventListener('click', () => {
         const newTheme = currentTheme() === 'dark' ? 'light' : 'dark';
@@ -97,6 +93,5 @@ function initThemeToggle(): void {
         } catch {
             // Storage unavailable; theme still applies for this page view.
         }
-        updateLabel();
     });
 }

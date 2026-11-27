@@ -18,7 +18,7 @@ func (h *Handler) requireCreator(w http.ResponseWriter, r *http.Request, ballotI
 		return nil, participant{}, false
 	}
 	if !current.IsCreator {
-		http.Error(w, "Only the ballot's creator can do that.", http.StatusForbidden)
+		http.Error(w, "Only the ballot's creator can do that", http.StatusForbidden)
 		return nil, participant{}, false
 	}
 	return ballot, current, true
@@ -93,7 +93,7 @@ func (h *Handler) HandleSetVisibility(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if othersRanked {
-			http.Error(w, "Participants have already ranked expecting privacy, so rankings must stay private.", http.StatusConflict)
+			http.Error(w, "Rankings must stay private; participants have already ranked expecting privacy", http.StatusConflict)
 			return
 		}
 	}
@@ -168,7 +168,7 @@ func (h *Handler) HandleRemoveParticipant(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if target.ID == current.ID {
-		http.Error(w, "The creator can't be removed.", http.StatusBadRequest)
+		http.Error(w, "The creator can't be removed", http.StatusBadRequest)
 		return
 	}
 	if err := r.ParseForm(); err != nil {

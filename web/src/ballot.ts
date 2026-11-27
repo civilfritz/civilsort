@@ -175,7 +175,7 @@ abstract class LiveBallot {
         if (!list) return;
 
         if (results.length === 0) {
-            list.innerHTML = '<li>No results yet. Add items and rank them!</li>';
+            list.innerHTML = '<li>No rankings yet. Add items and rank them to see results!</li>';
             return;
         }
 
@@ -535,7 +535,7 @@ class ParticipantPage extends LiveBallot {
 
             const item = form.closest('.ranked-item');
             const name = item?.querySelector('.item-name')?.textContent?.trim() ?? 'this item';
-            if (!confirm(`Are you sure you want to delete "${name}"?`)) {
+            if (!confirm(`Are you sure you want to remove "${name}"?`)) {
                 return;
             }
 
@@ -544,7 +544,7 @@ class ParticipantPage extends LiveBallot {
 
             this.participantFetch(form.action, { method: 'POST' }).then(async response => {
                 if (!response.ok) {
-                    throw new Error((await response.text()) || 'Failed to delete item');
+                    throw new Error((await response.text()) || 'Failed to remove item');
                 }
                 // Success: WebSocket broadcast will remove the item from DOM.
             }).catch((err: unknown) => {
@@ -656,13 +656,13 @@ class ParticipantPage extends LiveBallot {
         deleteForm.method = 'POST';
         deleteForm.action = `/ballot/${this.ballotId}/items/${item.id}/delete`;
         deleteForm.className = 'delete-form';
-        deleteForm.innerHTML = '<button type="submit" class="delete-btn" aria-label="Delete" title="Delete">✕</button>';
+        deleteForm.innerHTML = '<button type="submit" class="delete-btn" aria-label="Remove" title="Remove">✕</button>';
         actions.appendChild(deleteForm);
     }
 
     private updateEmptyStates(): void {
         setEmptyState(this.rankedList, 'Drag items here or tap + to rank them');
-        setEmptyState(this.unrankedList, "Add items below - unranked items won't affect results");
+        setEmptyState(this.unrankedList, "Add items below — unranked items don't affect results");
     }
 
     // --- Ranking ---
@@ -739,7 +739,7 @@ class ParticipantPage extends LiveBallot {
                 }
             }).catch((err: unknown) => {
                 console.error('Error saving ranking:', err);
-                showError('Failed to save ranking. Please try again.');
+                showError('Failed to save ranking');
             });
         }, 300);
     }
@@ -927,7 +927,7 @@ class ParticipantPage extends LiveBallot {
                 button.focus();
                 if (save && title !== original) {
                     updateTitle(title);
-                    this.creatorPost('title', new URLSearchParams({ title }));
+                    this.creatorPost('title', 'Failed to update title', new URLSearchParams({ title }));
                 }
             };
 
@@ -1004,12 +1004,14 @@ class ParticipantPage extends LiveBallot {
             if (makePrivate && !confirm('Make rankings private? Once anyone else ranks, they can\'t be made visible again.')) {
                 return;
             }
-            this.creatorPost('visibility', new URLSearchParams({ private: makePrivate ? '1' : '0' }));
+            this.creatorPost('visibility', 'Failed to change rankings visibility', new URLSearchParams({ private: makePrivate ? '1' : '0' }));
         });
 
         byId('delete-ballot-btn', HTMLButtonElement)?.addEventListener('click', () => {
-            if (confirm('Delete this ballot for everyone? This cannot be undone.')) {
-                this.creatorPost('delete');
+            const title = byId('ballot-title', HTMLElement)?.dataset['title'];
+            const ballot = title ? `"${title}"` : 'this ballot';
+            if (confirm(`Delete ${ballot} for everyone? This cannot be undone.`)) {
+                this.creatorPost('delete', 'Failed to delete ballot');
             }
         });
     }
@@ -1075,16 +1077,16 @@ class ParticipantPage extends LiveBallot {
             for (const box of form.querySelectorAll<HTMLInputElement>('input[type=checkbox]:checked')) {
                 body.set(box.name, box.value);
             }
-            this.creatorPost('remove', body, url);
+            this.creatorPost('remove', 'Failed to remove participant', body, url);
         }, { once: true });
         dialog.showModal();
     }
 
     // POSTs a creator action; results arrive over the WebSocket.
-    private creatorPost(action: string, body?: URLSearchParams, url = `/ballot/${this.ballotId}/${action}`): void {
+    private creatorPost(action: string, failure: string, body?: URLSearchParams, url = `/ballot/${this.ballotId}/${action}`): void {
         this.participantFetch(url, { method: 'POST', ...(body ? { body } : {}) })
             .then(async response => {
-                if (!response.ok) throw new Error((await response.text()) || `Failed to ${action}`);
+                if (!response.ok) throw new Error((await response.text()) || failure);
             })
             .catch((err: unknown) => showError(errorMessage(err)));
     }
@@ -1098,7 +1100,7 @@ class ParticipantPage extends LiveBallot {
             this.participantFetch(`/ballot/${this.ballotId}/toggle`, { method: 'POST' })
                 .then(async response => {
                     if (!response.ok) {
-                        throw new Error((await response.text()) || 'Failed to toggle ballot state');
+                        throw new Error((await response.text()) || 'Failed to open or close ballot');
                     }
                     return response.json() as Promise<ToggleResponse>;
                 })
@@ -1221,7 +1223,7 @@ function updateTitle(title: string): void {
         span.textContent = shown;
         span.dataset['title'] = title;
     }
-    document.title = `${shown} - civilsort`;
+    document.title = `${shown} — civilsort`;
 }
 
 // Copies text to the clipboard and briefly confirms on button.
@@ -1234,6 +1236,6 @@ function copyWithFeedback(button: HTMLButtonElement, text: string): void {
         }, 1500);
     }).catch((err: unknown) => {
         console.error('Failed to copy:', err);
-        showError('Failed to copy. Please try again.');
+        showError('Failed to copy');
     });
 }

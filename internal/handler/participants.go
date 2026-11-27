@@ -116,7 +116,7 @@ func (h *Handler) HandleJoinLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		http.Error(w, "This link is no longer valid. Ask the ballot's creator for a new one.", http.StatusNotFound)
+		http.Error(w, "Link no longer valid; ask the ballot's creator for a new one", http.StatusNotFound)
 		return
 	}
 
@@ -175,11 +175,11 @@ func (h *Handler) HandleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	name := cleanText(r.FormValue("name"), maxDisplayNameLength)
 	if name == "" {
-		http.Error(w, "Please enter your name to join.", http.StatusBadRequest)
+		http.Error(w, "Name required", http.StatusBadRequest)
 		return
 	}
 	if !ballot.IsOpen {
-		http.Error(w, "This ballot is closed to new participants.", http.StatusForbidden)
+		http.Error(w, "Closed to new participants", http.StatusForbidden)
 		return
 	}
 
@@ -220,5 +220,5 @@ func (h *Handler) requireParticipant(w http.ResponseWriter, r *http.Request, bal
 // ballot (never joined, removed, or lost their cookie). The page switches to
 // the viewer view on this status.
 func notParticipant(w http.ResponseWriter) {
-	http.Error(w, "You're not a participant on this ballot.", http.StatusUnauthorized)
+	http.Error(w, "Not a participant on this ballot", http.StatusUnauthorized)
 }
