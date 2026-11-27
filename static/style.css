@@ -421,8 +421,9 @@ h2 {
 }
 
 /* Results list */
-.results-list {
+.ballot .results-list {
     list-style: none;
+    padding-left: 0;
 }
 
 .results-list li {
