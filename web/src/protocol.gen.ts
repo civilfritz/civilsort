@@ -30,6 +30,7 @@ export const CloseBallotDeleted = 4002;
  */
 export interface ResultEntry {
   rank: number /* int */;
+  itemId: number /* int64 */;
   name: string;
 }
 /**

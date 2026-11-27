@@ -572,9 +572,11 @@ func (h *Handler) computeResults(ctx context.Context, ballotID string, items []m
 	// Convert to protocol.ResultEntry
 	entries := make([]protocol.ResultEntry, len(results))
 	for i, r := range results {
+		item := indexToItem[r.CandidateIndex]
 		entries[i] = protocol.ResultEntry{
-			Rank: r.Rank,
-			Name: indexToItem[r.CandidateIndex].Name,
+			Rank:   r.Rank,
+			ItemID: item.ID,
+			Name:   item.Name,
 		}
 	}
 

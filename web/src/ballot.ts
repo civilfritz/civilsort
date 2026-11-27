@@ -175,11 +175,27 @@ abstract class LiveBallot {
             return;
         }
 
+        // Reorder the same elements so each can glide from its old spot.
+        const existing = [...list.querySelectorAll<HTMLLIElement>('li[data-item-id]')];
+        const reuse = new Map(existing.map(li => [li.dataset['itemId'], li]));
+        const tops = captureTops(existing);
+
+        const added: HTMLLIElement[] = [];
         list.replaceChildren(...results.map(entry => {
-            const li = document.createElement('li');
+            let li = reuse.get(String(entry.itemId));
+            if (!li) {
+                li = document.createElement('li');
+                li.dataset['itemId'] = String(entry.itemId);
+                added.push(li);
+            }
             li.textContent = `#${entry.rank}: ${entry.name}`;
             return li;
         }));
+
+        animateFrom(tops);
+        if (existing.length > 0 && !prefersReducedMotion()) {
+            for (const li of added) li.animate([{ opacity: 0 }, { opacity: 1 }], moveTiming);
+        }
     }
 
     // --- Participant list ---
@@ -613,6 +629,7 @@ class ParticipantPage extends LiveBallot {
                 const li = (e.target as Element | null)?.closest('.move-btn')?.closest<HTMLLIElement>('.ranked-item');
                 if (!li) return;
                 const toRanked = li.parentElement !== this.rankedList;
+                const tops = captureTops(this.itemElements());
                 if (toRanked) {
                     this.rankedList.appendChild(li);
                 } else {
@@ -620,6 +637,15 @@ class ParticipantPage extends LiveBallot {
                 }
                 syncMoveButton(li, toRanked);
                 this.updateEmptyStates();
+
+                // Lift the moved item above the neighbours it passes.
+                const moving = animateFrom(tops).get(li);
+                if (moving) {
+                    li.classList.add('moving');
+                    const done = (): void => li.classList.remove('moving');
+                    moving.addEventListener('finish', done);
+                    moving.addEventListener('cancel', done);
+                }
                 this.saveRanking();
             });
         }
@@ -974,6 +1000,37 @@ class ParticipantPage extends LiveBallot {
 
 function itemId(li: HTMLElement): number {
     return parseInt(li.dataset['itemId'] ?? '', 10);
+}
+
+// FLIP animation: capture where elements are, change the DOM, then let
+// animateFrom glide each one from its old position to its new one.
+const moveTiming: KeyframeAnimationOptions = { duration: 600, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' };
+
+function prefersReducedMotion(): boolean {
+    return matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+// Records each element's on-screen top, including any in-flight
+// animation, then cancels those animations.
+function captureTops(els: Iterable<HTMLElement>): Map<HTMLElement, number> {
+    const tops = new Map<HTMLElement, number>();
+    for (const el of els) tops.set(el, el.getBoundingClientRect().top);
+    for (const el of tops.keys()) el.getAnimations().forEach(a => a.cancel());
+    return tops;
+}
+
+// Animates each still-present element from its captured top to where it is
+// now, returning the animations started.
+function animateFrom(tops: Map<HTMLElement, number>): Map<HTMLElement, Animation> {
+    const started = new Map<HTMLElement, Animation>();
+    if (prefersReducedMotion()) return started;
+    for (const [el, top] of tops) {
+        const delta = el.isConnected ? top - el.getBoundingClientRect().top : 0;
+        if (delta !== 0) {
+            started.set(el, el.animate([{ transform: `translateY(${delta}px)` }, { transform: 'none' }], moveTiming));
+        }
+    }
+    return started;
 }
 
 // Labels an item's move button for the zone it's in.

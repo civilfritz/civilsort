@@ -27,8 +27,9 @@ const (
 
 // ResultEntry is one item in the computed Schulze ranking.
 type ResultEntry struct {
-	Rank int    `json:"rank"`
-	Name string `json:"name"`
+	Rank   int    `json:"rank"`
+	ItemID int64  `json:"itemId"`
+	Name   string `json:"name"`
 }
 
 // Messages are broadcast to everyone watching a ballot, so they identify

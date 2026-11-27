@@ -34,11 +34,11 @@ func TestMessagesEncode(t *testing.T) {
 		{
 			name: "participants_changed",
 			msg: NewParticipantsChangedMessage(
-				[]ResultEntry{{Rank: 1, Name: "A"}},
+				[]ResultEntry{{Rank: 1, ItemID: 1, Name: "A"}},
 				[]ItemEntry{{ID: 1, Name: "A", AddedBy: "p", AddedByName: "U"}},
 				[]ParticipantEntry{{DisplayName: "U", ParticipantID: "p"}},
 			),
-			want: `{"type":"participants_changed","results":[{"rank":1,"name":"A"}],"items":[{"id":1,"name":"A","addedBy":"p","addedByName":"U","rankedByOthers":false}],"participants":[{"displayName":"U","participantId":"p"}],"participantCount":1}`,
+			want: `{"type":"participants_changed","results":[{"rank":1,"itemId":1,"name":"A"}],"items":[{"id":1,"name":"A","addedBy":"p","addedByName":"U","rankedByOthers":false}],"participants":[{"displayName":"U","participantId":"p"}],"participantCount":1}`,
 		},
 	}
 

@@ -134,7 +134,7 @@
         <p class="help-text">Rankings computed using the <a href="/about?from={{.Ballot.ID}}" target="_blank" rel="noopener noreferrer">Schulze method</a> - a fair, cycle-resistant voting algorithm.</p>
         <ul id="results-list" class="results-list">
             {{range .Results}}
-            <li>#{{.Rank}}: {{.Name}}</li>
+            <li data-item-id="{{.ItemID}}">#{{.Rank}}: {{.Name}}</li>
             {{else}}
             <li>No rankings yet. Add items and rank them to see results!</li>
             {{end}}

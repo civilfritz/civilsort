@@ -376,6 +376,11 @@ h2 {
     cursor: grabbing;
 }
 
+.ranked-item.moving {
+    position: relative;
+    z-index: 1;
+}
+
 .item-actions {
     display: flex;
     align-items: center;
