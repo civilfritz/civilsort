@@ -51,6 +51,10 @@ func (h *Handler) queryParticipant(ctx context.Context, query string, args ...an
 //
 // A browser from before per-ballot identity has only a voter_id cookie; if
 // it maps to a participant here, that participant's cookie is issued.
+//
+// TODO(v1.0): Remove the voter_id fallback (here and legacyCookie) and drop
+// participants.legacy_user_id in a new schema version. It only upgrades
+// browsers that joined ballots before per-ballot cookies.
 func (h *Handler) currentParticipant(w http.ResponseWriter, r *http.Request, ballotID string) (participant, bool, error) {
 	if c, err := r.Cookie(participantCookie); err == nil && c.Value != "" {
 		p, ok, err := h.participantBySecret(r.Context(), ballotID, c.Value)

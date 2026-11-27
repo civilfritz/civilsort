@@ -37,7 +37,7 @@ CREATE TABLE participants (
 	display_name   TEXT NOT NULL DEFAULT '',
 	is_creator     INTEGER NOT NULL DEFAULT 0,
 	removed_at     DATETIME,
-	legacy_user_id TEXT,
+	legacy_user_id TEXT, -- TODO(v1.0): drop with the voter_id fallback in handler.currentParticipant
 	created_at     DATETIME NOT NULL DEFAULT (datetime('now')),
 	PRIMARY KEY (ballot_id, id),
 	UNIQUE (ballot_id, secret)
