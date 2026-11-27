@@ -1010,8 +1010,9 @@ class ParticipantPage extends LiveBallot {
             .catch((err: unknown) => showError(errorMessage(err)));
     }
 
+    // The creator's padlock opens or closes the ballot to new participants.
     private initToggleOpen(): void {
-        const toggleBtn = byId('toggle-open-btn', HTMLButtonElement);
+        const toggleBtn = byId('ballot-status', HTMLButtonElement);
         if (!toggleBtn) return;
 
         toggleBtn.addEventListener('click', () => {
@@ -1088,18 +1089,18 @@ function setEmptyState(list: HTMLUListElement, text: string): void {
     list.appendChild(emptyLi);
 }
 
-// Updates the Open/Closed status and the creator's menu item.
+// Locks or unlocks the padlock; its CSS transition animates the shackle.
 function updateToggleUI(isOpen: boolean): void {
-    const status = byId('ballot-status', HTMLElement);
-    if (status) {
-        status.textContent = isOpen ? 'Open' : 'Closed';
-        status.classList.toggle('status-open', isOpen);
-        status.classList.toggle('status-closed', !isOpen);
+    const lock = byId('ballot-status', HTMLElement);
+    if (!lock) return;
+    lock.classList.toggle('unlocked', isOpen);
+    lock.classList.toggle('locked', !isOpen);
+    let label = isOpen ? 'Open to new participants' : 'Closed to new participants';
+    if (lock instanceof HTMLButtonElement) {
+        label += isOpen ? '. Click to close.' : '. Click to reopen.';
     }
-    const button = byId('toggle-open-btn', HTMLButtonElement);
-    if (button) {
-        button.textContent = isOpen ? 'Close to new participants' : 'Reopen to new participants';
-    }
+    lock.setAttribute('aria-label', label);
+    lock.title = label;
 }
 
 function updateVisibilityUI(rankingsPrivate: boolean): void {
@@ -1116,7 +1117,7 @@ function updateVisibilityUI(rankingsPrivate: boolean): void {
 }
 
 function isBallotOpen(): boolean {
-    return byId('ballot-status', HTMLElement)?.classList.contains('status-open') ?? false;
+    return byId('ballot-status', HTMLElement)?.classList.contains('unlocked') ?? false;
 }
 
 function updateTitle(title: string): void {

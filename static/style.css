@@ -532,25 +532,52 @@ h2 {
     }
 }
 
-/* Ballot open/closed status */
-.status-pill {
-    padding: 6px 16px;
-    border: 2px solid;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: 500;
+/* Open/closed padlock: unlocked while new participants can join. The
+   creator's is a button; the shackle swings open and shut. */
+.lock {
+    display: inline-flex;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 6px;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    transition: color 0.35s, background 0.2s;
 }
 
-.status-open {
-    background: var(--success-bg);
-    border-color: var(--success-border);
-    color: var(--success-text);
+.lock svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible; /* room for the raised shackle */
 }
 
-.status-closed {
-    background: var(--bg-surface-alt);
-    border-color: var(--danger);
+.lock.unlocked {
+    color: var(--success);
+}
+
+.lock.locked {
     color: var(--danger);
+}
+
+button.lock {
+    cursor: pointer;
+}
+
+@media (hover: hover) {
+    button.lock:hover {
+        background: var(--bg-surface-alt);
+    }
+}
+
+.lock-shackle {
+    transform-box: view-box;
+    transform-origin: 8px 11px;
+    transition: transform 0.35s cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.unlocked .lock-shackle {
+    transform: translateY(-2px) rotate(-20deg);
 }
 
 /* Stats page */
@@ -819,8 +846,8 @@ input:focus-visible,
 @media (prefers-reduced-motion: reduce) {
     .slideDown,
     .toast,
-    @keyframes slideIn,
-    @keyframes fadeOut {
+    .lock,
+    .lock-shackle {
         animation: none;
         transition: none;
     }
@@ -844,7 +871,7 @@ input:focus-visible,
         order: 1;
     }
 
-    .status-pill {
+    .lock {
         order: 2;
     }
 

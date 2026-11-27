@@ -83,7 +83,7 @@ civilfritz-voting/
 | Add items, rank, rename self | | ✓ | ✓ |
 | View others' rankings (unless private) | | ✓ | ✓ |
 | Delete items | | own, until someone else ranks them | any |
-| Open/close, edit title, make rankings private | | | ✓ |
+| Lock/unlock joining (the padlock), edit title, make rankings private | | | ✓ |
 | Copy, reset, or remove participants; delete ballot | | | ✓ |
 
 Closing a ballot stops new people joining; it stays viewable. Making rankings
