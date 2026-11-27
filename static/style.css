@@ -441,6 +441,11 @@ h2 {
     color: var(--success-text);
 }
 
+.method-note {
+    margin-top: 15px;
+    font-style: italic;
+}
+
 /* Hamburger menu */
 .hamburger-menu {
     padding: 8px 12px;

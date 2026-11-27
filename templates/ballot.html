@@ -142,7 +142,6 @@
 
     <div id="results-tab" class="tab-panel" role="tabpanel" aria-labelledby="results-tab">
         <h2>Results</h2>
-        <p class="help-text">Rankings computed using the <a href="/about?from={{.Ballot.ID}}" target="_blank" rel="noopener noreferrer">Schulze method</a> — a fair, cycle-resistant voting algorithm.</p>
         <ul id="results-list" class="results-list">
             {{range .Results}}
             <li data-item-id="{{.ItemID}}">#{{.Rank}}: {{.Name}}</li>
@@ -150,6 +149,7 @@
             <li>No rankings yet. Add items and rank them to see results!</li>
             {{end}}
         </ul>
+        <p class="help-text method-note">Rankings computed using the <a href="/about?from={{.Ballot.ID}}" target="_blank" rel="noopener noreferrer">Schulze method</a> — a fair, cycle-resistant voting algorithm.</p>
     </div>
 </div>
 <dialog id="qr-dialog" class="app-dialog qr-dialog" aria-labelledby="qr-title">
