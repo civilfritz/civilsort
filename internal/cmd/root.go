@@ -98,6 +98,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading static files: %w", err)
 	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, staticSub, "favicon.png")
+	})
 
 	srv := &http.Server{
 		Addr:              addr,
