@@ -19,10 +19,21 @@ func GenerateUUID() string {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// GenerateShortID generates an 8-character alphanumeric ID.
+// GenerateShortID generates an 8-character alphanumeric ID, for
+// identifiers that are safe to show.
 func GenerateShortID() string {
+	return randomBase62(8)
+}
+
+// GenerateSecret generates a 22-character alphanumeric credential (about
+// 131 bits of entropy).
+func GenerateSecret() string {
+	return randomBase62(22)
+}
+
+func randomBase62(length int) string {
 	const charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	b := make([]byte, 8)
+	b := make([]byte, length)
 	for i := range b {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {

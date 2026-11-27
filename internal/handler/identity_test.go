@@ -28,10 +28,8 @@ func TestBroadcastsHideSecrets(t *testing.T) {
 	}
 	payload := string(data)
 
-	for name, secret := range map[string]string{"secret": creator.Secret, "voter_id": creator.userID} {
-		if strings.Contains(payload, secret) {
-			t.Errorf("broadcast contains %s %q: %s", name, secret, payload)
-		}
+	if strings.Contains(payload, creator.Secret) {
+		t.Errorf("broadcast contains secret %q: %s", creator.Secret, payload)
 	}
 	if !strings.Contains(payload, creator.ID) {
 		t.Errorf("broadcast should identify participant by ID %q: %s", creator.ID, payload)
@@ -43,7 +41,7 @@ func TestHandleGetRankings_Access(t *testing.T) {
 	ballotID, viewer := newBallot(t, h)
 	target := join(t, h, ballotID)
 
-	get := func(as *member, id string) int {
+	get := func(as *participant, id string) int {
 		return do(t, h.HandleGetRankings, "GET", req{
 			as:   as,
 			path: map[string]string{"id": ballotID, "participantID": id},

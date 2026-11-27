@@ -3,9 +3,22 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"log"
 	"net/http"
 
 	"github.com/civilfritz/civilsort/internal/util"
+)
+
+const (
+	// participantCookie holds a participant's secret. It is scoped to
+	// /ballot/{id}, so each ballot only ever receives its own.
+	participantCookie = "participant"
+
+	// legacyCookie is the global user ID cookie used before identity was per
+	// ballot. It is only read, to upgrade existing browsers.
+	legacyCookie = "voter_id"
+
+	cookieMaxAge = 365 * 24 * 60 * 60 // 1 year, refreshed on each page view
 )
 
 // participant is a requester's membership in one ballot.
@@ -31,42 +44,102 @@ func (h *Handler) queryParticipant(ctx context.Context, query string, args ...an
 	return p, true, nil
 }
 
-// currentParticipant returns the requester's participant on ballotID. ok is
-// false when the requester isn't an active participant.
-func (h *Handler) currentParticipant(r *http.Request, ballotID string) (participant, bool, error) {
-	return h.participantByLegacyUser(r.Context(), ballotID, UserID(r.Context()))
+// currentParticipant returns the requester's participant on ballotID from
+// their participant cookie. ok is false when they aren't an active
+// participant.
+//
+// A browser from before per-ballot identity has only a voter_id cookie; if
+// it maps to a participant here, that participant's cookie is issued.
+func (h *Handler) currentParticipant(w http.ResponseWriter, r *http.Request, ballotID string) (participant, bool, error) {
+	if c, err := r.Cookie(participantCookie); err == nil && c.Value != "" {
+		p, ok, err := h.participantBySecret(r.Context(), ballotID, c.Value)
+		if err != nil || ok {
+			return p, ok, err
+		}
+	}
+
+	c, err := r.Cookie(legacyCookie)
+	if err != nil || !util.IsUUID(c.Value) {
+		return participant{}, false, nil
+	}
+	p, ok, err := h.queryParticipant(r.Context(),
+		`SELECT `+participantColumns+` FROM participants
+		 WHERE ballot_id = ? AND legacy_user_id = ? AND removed_at IS NULL AND secret IS NOT NULL`,
+		ballotID, c.Value)
+	if err != nil || !ok {
+		return participant{}, false, err
+	}
+	setParticipantCookie(w, r, ballotID, p.Secret)
+	return p, true, nil
 }
 
-// participantByLegacyUser finds the active participant on ballotID belonging
-// to a voter_id user.
-func (h *Handler) participantByLegacyUser(ctx context.Context, ballotID, userID string) (participant, bool, error) {
+// participantBySecret finds the active participant on ballotID with secret.
+func (h *Handler) participantBySecret(ctx context.Context, ballotID, secret string) (participant, bool, error) {
 	return h.queryParticipant(ctx,
 		`SELECT `+participantColumns+` FROM participants
-		 WHERE ballot_id = ? AND legacy_user_id = ? AND removed_at IS NULL`,
-		ballotID, userID)
+		 WHERE ballot_id = ? AND secret = ? AND removed_at IS NULL`,
+		ballotID, secret)
 }
 
-// addParticipant makes userID a participant of ballotID, returning the
-// existing participant if there is one. isNew reports whether one was created.
-func (h *Handler) addParticipant(ctx context.Context, ballotID, userID string, isCreator bool) (p participant, isNew bool, err error) {
-	result, err := h.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO participants (ballot_id, id, secret, is_creator, legacy_user_id)
-		 VALUES (?, ?, ?, ?, ?)`,
-		ballotID, util.GenerateShortID(), util.GenerateShortID(), isCreator, userID)
+// addParticipant creates a new participant on ballotID.
+func (h *Handler) addParticipant(ctx context.Context, ballotID string, isCreator bool) (participant, error) {
+	p := participant{ID: util.GenerateShortID(), Secret: util.GenerateSecret(), IsCreator: isCreator}
+	_, err := h.db.ExecContext(ctx,
+		`INSERT INTO participants (ballot_id, id, secret, is_creator) VALUES (?, ?, ?, ?)`,
+		ballotID, p.ID, p.Secret, isCreator)
 	if err != nil {
-		return participant{}, false, err
+		return participant{}, err
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return participant{}, false, err
+	return p, nil
+}
+
+// HandleJoinLink signs a browser in as the participant whose secret is in
+// the URL, then redirects to the ballot so the secret leaves the address bar.
+// It serves both /ballot/{id}/join/{secret} and the legacy
+// /ballot/{id}/{legacySecret} links.
+func (h *Handler) HandleJoinLink(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	secret := r.PathValue("secret")
+	if secret == "" {
+		secret = r.PathValue("legacySecret")
 	}
 
-	p, ok, err := h.participantByLegacyUser(ctx, ballotID, userID)
+	_, ok, err := h.participantBySecret(r.Context(), ballotID, secret)
 	if err != nil {
-		return participant{}, false, err
+		log.Printf("Error resolving join link: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 	if !ok {
-		return participant{}, false, sql.ErrNoRows
+		http.Error(w, "This link is no longer valid. Ask the ballot's creator for a new one.", http.StatusNotFound)
+		return
 	}
-	return p, n > 0, nil
+
+	setParticipantCookie(w, r, ballotID, secret)
+	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+}
+
+// joinLink is the path that signs another browser in as p.
+func joinLink(ballotID string, p participant) string {
+	return "/ballot/" + ballotID + "/join/" + p.Secret
+}
+
+// setParticipantCookie stores a participant's secret for one ballot.
+func setParticipantCookie(w http.ResponseWriter, r *http.Request, ballotID, secret string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     participantCookie,
+		Value:    secret,
+		Path:     "/ballot/" + ballotID,
+		MaxAge:   cookieMaxAge,
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// isHTTPS reports whether the client connected over HTTPS, directly or via a
+// TLS-terminating proxy such as Caddy. A spoofed header only makes the
+// spoofer's own cookie Secure.
+func isHTTPS(r *http.Request) bool {
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }

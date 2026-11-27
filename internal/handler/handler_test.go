@@ -15,7 +15,6 @@ import (
 
 	"github.com/civilfritz/civilsort/internal/db"
 	"github.com/civilfritz/civilsort/internal/hub"
-	"github.com/civilfritz/civilsort/internal/util"
 )
 
 // testHandler creates a fully wired Handler with in-memory database for testing
@@ -47,14 +46,8 @@ func testHandler(t *testing.T) *Handler {
 	return New(database, tmpls, hubManager)
 }
 
-// member is a test participant and the browser identity that owns it.
-type member struct {
-	userID string
-	participant
-}
-
 // newBallot creates an open ballot and its creator.
-func newBallot(t *testing.T, h *Handler) (string, member) {
+func newBallot(t *testing.T, h *Handler) (string, participant) {
 	t.Helper()
 	ballotID := generateBallotID()
 	if _, err := h.db.Exec("INSERT INTO ballots (id, title) VALUES (?, 'Test')", ballotID); err != nil {
@@ -64,19 +57,18 @@ func newBallot(t *testing.T, h *Handler) (string, member) {
 }
 
 // join adds a new non-creator participant to ballotID.
-func join(t *testing.T, h *Handler, ballotID string) member {
+func join(t *testing.T, h *Handler, ballotID string) participant {
 	t.Helper()
 	return addMember(t, h, ballotID, false)
 }
 
-func addMember(t *testing.T, h *Handler, ballotID string, isCreator bool) member {
+func addMember(t *testing.T, h *Handler, ballotID string, isCreator bool) participant {
 	t.Helper()
-	userID := util.GenerateUUID()
-	p, _, err := h.addParticipant(context.Background(), ballotID, userID, isCreator)
+	p, err := h.addParticipant(context.Background(), ballotID, isCreator)
 	if err != nil {
 		t.Fatalf("addParticipant: %v", err)
 	}
-	return member{userID: userID, participant: p}
+	return p
 }
 
 func setOpen(t *testing.T, h *Handler, ballotID string, open bool) {
@@ -107,13 +99,14 @@ func countRows(t *testing.T, h *Handler, query string, args ...any) int {
 	return n
 }
 
-// req describes a test request. as is the requesting member; nil means a
-// browser with no identity on any ballot.
+// req describes a test request. as is the requesting participant, sent as
+// their cookie; nil means a browser with no identity on the ballot.
 type req struct {
-	as   *member
-	path map[string]string
-	form url.Values
-	json any
+	as      *participant
+	path    map[string]string
+	form    url.Values
+	json    any
+	cookies []*http.Cookie
 }
 
 // do builds the request described by o, passes it to handle, and returns
@@ -144,15 +137,15 @@ func do(t *testing.T, handle http.HandlerFunc, method string, o req) *httptest.R
 		r.SetPathValue(k, v)
 	}
 
-	userID, fresh := util.GenerateUUID(), true
 	if o.as != nil {
-		userID, fresh = o.as.userID, false
+		r.AddCookie(&http.Cookie{Name: participantCookie, Value: o.as.Secret})
 	}
-	ctx := context.WithValue(r.Context(), userIDKey, userID)
-	ctx = context.WithValue(ctx, freshCookieKey, fresh)
+	for _, c := range o.cookies {
+		r.AddCookie(c)
+	}
 
 	rec := httptest.NewRecorder()
-	handle(rec, r.WithContext(ctx))
+	handle(rec, r)
 	return rec
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/civilfritz/civilsort/internal/model"
 	"github.com/civilfritz/civilsort/internal/protocol"
 	"github.com/civilfritz/civilsort/internal/schulze"
+	"github.com/civilfritz/civilsort/internal/util"
 )
 
 // HandleHome shows the landing page with the create ballot form.
@@ -23,7 +24,8 @@ func (h *Handler) HandleHome(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleCreateBallot creates a new ballot and redirects to it.
+// HandleCreateBallot creates a new ballot with the requester as its
+// creator and redirects to it.
 func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
@@ -31,7 +33,6 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	title := cleanText(r.FormValue("title"), maxNameLength)
-	userID := UserID(r.Context())
 	ballotID := generateBallotID()
 
 	_, err := h.db.ExecContext(r.Context(),
@@ -43,87 +44,58 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Creator is automatically the first participant
-	creator, _, err := h.addParticipant(r.Context(), ballotID, userID, true)
+	creator, err := h.addParticipant(r.Context(), ballotID, true)
 	if err != nil {
 		log.Printf("Error adding creator as participant: %v", err)
-		// Non-fatal: redirect to base URL and they'll be added when they visit
-		http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	http.Redirect(w, r, "/ballot/"+ballotID+"/"+creator.Secret, http.StatusSeeOther)
+	setParticipantCookie(w, r, ballotID, creator.Secret)
+	http.Redirect(w, r, "/ballot/"+ballotID, http.StatusSeeOther)
+}
+
+// generateBallotID generates a short random ID for URLs.
+func generateBallotID() string {
+	return util.GenerateShortID()
 }
 
 // HandleBallot shows the ballot page with items, ranking, and results.
-// Handles both /ballot/{id} and /ballot/{id}/{participantID} routes.
 func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
-	participantID := r.PathValue("participantID") // empty for base URL
-	userID := UserID(r.Context())
 
-	// 1. Load ballot
 	ballot := h.loadBallot(w, r, ballotID)
 	if ballot == nil {
 		return
 	}
 
-	// 2. If participant URL with fresh cookie: adopt the identity
-	if participantID != "" && IsFreshCookie(r.Context()) {
-		var ownerID sql.NullString
-		err := h.db.QueryRowContext(r.Context(),
-			"SELECT legacy_user_id FROM participants WHERE ballot_id = ? AND secret = ? AND removed_at IS NULL",
-			ballotID, participantID).Scan(&ownerID)
-		if err == nil && ownerID.Valid {
-			// Found the owner - set cookie and redirect to same URL
-			setCookie(w, r, ownerID.String)
-			http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-			return
-		}
-		// Not found: fall through to normal flow
-	}
-
-	// 3. Check if current user is a participant
-	current, isParticipant, err := h.participantByLegacyUser(r.Context(), ballotID, userID)
+	current, isParticipant, err := h.currentParticipant(w, r, ballotID)
 	if err != nil {
 		log.Printf("Error fetching participant: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	if isParticipant {
-		// User is a participant
-		// If URL doesn't match their secret link, redirect
-		if participantID == "" || participantID != current.Secret {
-			http.Redirect(w, r, "/ballot/"+ballotID+"/"+current.Secret, http.StatusSeeOther)
-			return
-		}
-		// URLs match - proceed to render
-	} else {
-		// User is NOT a participant
-		if ballot.IsOpen {
-			// Add participant and redirect
-			joined, isNew, err := h.addParticipant(r.Context(), ballotID, userID, false)
-			if err != nil {
-				log.Printf("Error adding participant: %v", err)
-				http.Error(w, "Internal server error", http.StatusInternalServerError)
-				return
-			}
-			// Broadcast to other participants that a new participant joined
-			if isNew {
-				h.broadcastParticipantsChanged(r.Context(), ballotID)
-			}
-			http.Redirect(w, r, "/ballot/"+ballotID+"/"+joined.Secret, http.StatusSeeOther)
-			return
-		} else {
-			// Ballot is closed
+	if !isParticipant {
+		if !ballot.IsOpen {
 			w.WriteHeader(http.StatusForbidden)
 			if err := h.templates.ExecuteTemplate(w, "closed.html", nil); err != nil {
 				log.Printf("Error rendering closed page: %v", err)
 			}
 			return
 		}
+
+		current, err = h.addParticipant(r.Context(), ballotID, false)
+		if err != nil {
+			log.Printf("Error adding participant: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		h.broadcastParticipantsChanged(r.Context(), ballotID)
 	}
+
+	// Set or refresh the cookie so it expires a year after the last visit.
+	setParticipantCookie(w, r, ballotID, current.Secret)
 
 	// 4. Render ballot
 	// Get all items with display names
@@ -200,6 +172,7 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		"IsOpen":               ballot.IsOpen,
 		"ParticipantCount":     len(participants),
 		"CurrentParticipantID": current.ID,
+		"JoinLink":             joinLink(ballotID, current),
 		"Participants":         participants,
 		"DisplayName":          current.DisplayName,
 		"AnonymousCount":       anonymousCount,
@@ -369,7 +342,7 @@ func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
 	// Only authorized participants can toggle
-	_, isParticipant, err := h.currentParticipant(r, ballotID)
+	_, isParticipant, err := h.currentParticipant(w, r, ballotID)
 	if err != nil {
 		log.Printf("Error checking participant for toggle: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -404,7 +377,7 @@ func (h *Handler) HandleSetName(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
 	// Verify user is a participant
-	current, isParticipant, err := h.currentParticipant(r, ballotID)
+	current, isParticipant, err := h.currentParticipant(w, r, ballotID)
 	if err != nil || !isParticipant {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
@@ -460,7 +433,7 @@ func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ball
 		return nil, participant{}, false
 	}
 
-	current, isParticipant, err := h.currentParticipant(r, ballotID)
+	current, isParticipant, err := h.currentParticipant(w, r, ballotID)
 	if err != nil {
 		log.Printf("Error checking participant: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -475,15 +448,14 @@ func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ball
 		return nil, participant{}, false
 	}
 
-	current, isNew, err := h.addParticipant(r.Context(), ballotID, UserID(r.Context()), false)
+	current, err = h.addParticipant(r.Context(), ballotID, false)
 	if err != nil {
 		log.Printf("Error adding participant: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return nil, participant{}, false
 	}
-	if isNew {
-		h.broadcastParticipantsChanged(r.Context(), ballotID)
-	}
+	setParticipantCookie(w, r, ballotID, current.Secret)
+	h.broadcastParticipantsChanged(r.Context(), ballotID)
 	return ballot, current, true
 }
 
@@ -731,7 +703,7 @@ func (h *Handler) HandleGetRankings(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 	targetID := r.PathValue("participantID")
 
-	_, isParticipant, err := h.currentParticipant(r, ballotID)
+	_, isParticipant, err := h.currentParticipant(w, r, ballotID)
 	if err != nil {
 		log.Printf("Error checking participant: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

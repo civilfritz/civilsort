@@ -17,13 +17,19 @@ func TestHandleCreateBallot(t *testing.T) {
 		t.Fatalf("Expected status 303, got %d", rec.Code)
 	}
 	location := rec.Header().Get("Location")
-	if !strings.HasPrefix(location, "/ballot/") {
-		t.Fatalf("Expected redirect to /ballot/..., got %s", location)
+	parts := strings.Split(location, "/")
+	if len(parts) != 3 || parts[1] != "ballot" {
+		t.Fatalf("Expected redirect to /ballot/{id} with no secret, got %s", location)
 	}
+	ballotID := parts[2]
 
-	ballotID := strings.Split(location, "/")[2]
-	if n := countRows(t, h, "SELECT COUNT(*) FROM participants WHERE ballot_id = ? AND is_creator", ballotID); n != 1 {
-		t.Errorf("Expected 1 creator, got %d", n)
+	cookie := participantCookieFrom(t, rec)
+	if cookie.Path != "/ballot/"+ballotID {
+		t.Errorf("cookie path = %q, want /ballot/%s", cookie.Path, ballotID)
+	}
+	creator, ok, err := h.participantBySecret(t.Context(), ballotID, cookie.Value)
+	if err != nil || !ok || !creator.IsCreator {
+		t.Errorf("cookie should identify the creator: %+v ok=%v err=%v", creator, ok, err)
 	}
 }
 
@@ -41,9 +47,10 @@ func TestHandleBallot_NewParticipant(t *testing.T) {
 
 	rec := do(t, h.HandleBallot, "GET", req{path: map[string]string{"id": ballotID}})
 
-	if rec.Code != http.StatusSeeOther {
-		t.Errorf("Expected status 303, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
+	participantCookieFrom(t, rec)
 	if n := countRows(t, h, "SELECT COUNT(*) FROM participants WHERE ballot_id = ?", ballotID); n != 2 {
 		t.Errorf("Expected visitor to be added as participant, got %d participants", n)
 	}

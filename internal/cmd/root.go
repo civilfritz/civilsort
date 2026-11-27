@@ -93,18 +93,15 @@ func runServer(cmd *cobra.Command, args []string) error {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
-	// Static files skip UserMiddleware: they don't need a user.
 	staticSub, err := fs.Sub(staticFS, "static")
 	if err != nil {
 		return fmt.Errorf("loading static files: %w", err)
 	}
-	root := http.NewServeMux()
-	root.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
-	root.Handle("/", h.UserMiddleware(mux))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           securityHeadersMiddleware(http.NewCrossOriginProtection().Handler(root)),
+		Handler:           securityHeadersMiddleware(http.NewCrossOriginProtection().Handler(mux)),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

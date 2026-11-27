@@ -569,18 +569,14 @@ class BallotPage {
         const ballotUrl = `${location.origin}/ballot/${this.ballotId}`;
 
         const copyUrlBtn = byId('copy-url-btn', HTMLButtonElement);
-        copyUrlBtn?.addEventListener('click', () => {
-            navigator.clipboard.writeText(ballotUrl).then(() => {
-                const originalText = copyUrlBtn.textContent;
-                copyUrlBtn.textContent = '✓ Copied!';
-                setTimeout(() => {
-                    copyUrlBtn.textContent = originalText;
-                }, 1500);
-            }).catch((err: unknown) => {
-                console.error('Failed to copy URL:', err);
-                showError('Failed to copy URL. Please try again.');
-            });
-        });
+        copyUrlBtn?.addEventListener('click', () => copyWithFeedback(copyUrlBtn, ballotUrl));
+
+        // Personal link: signs another browser in as this participant.
+        const deviceLinkBtn = byId('device-link-btn', HTMLButtonElement);
+        const deviceLink = deviceLinkBtn?.dataset['link'];
+        if (deviceLinkBtn && deviceLink) {
+            deviceLinkBtn.addEventListener('click', () => copyWithFeedback(deviceLinkBtn, location.origin + deviceLink));
+        }
 
         const shareUrlBtn = byId('share-url-btn', HTMLButtonElement);
         if (!shareUrlBtn) return;
@@ -631,4 +627,18 @@ function updateToggleUI(isOpen: boolean): void {
     btn.textContent = isOpen ? 'Open' : 'Closed';
     btn.classList.toggle('toggle-open', isOpen);
     btn.classList.toggle('toggle-closed', !isOpen);
+}
+
+// Copies text to the clipboard and briefly confirms on button.
+function copyWithFeedback(button: HTMLButtonElement, text: string): void {
+    navigator.clipboard.writeText(text).then(() => {
+        const originalText = button.textContent;
+        button.textContent = '✓ Copied!';
+        setTimeout(() => {
+            button.textContent = originalText;
+        }, 1500);
+    }).catch((err: unknown) => {
+        console.error('Failed to copy:', err);
+        showError('Failed to copy. Please try again.');
+    });
 }

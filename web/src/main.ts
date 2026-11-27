@@ -35,7 +35,7 @@ function initMenu(): void {
     });
 
     // Don't close menu when clicking theme toggle, copy, or share buttons
-    for (const selector of ['.theme-toggle', '#copy-url-btn', '#share-url-btn']) {
+    for (const selector of ['.theme-toggle', '#copy-url-btn', '#share-url-btn', '#device-link-btn']) {
         menuDropdown.querySelector(selector)?.addEventListener('click', (e) => {
             e.stopPropagation();
         });
