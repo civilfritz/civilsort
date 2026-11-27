@@ -11,7 +11,11 @@ import (
 func TestHandleCreateBallot(t *testing.T) {
 	h := testHandler(t)
 
-	rec := do(t, h.HandleCreateBallot, "POST", req{form: url.Values{"title": {"Test Ballot"}}})
+	if rec := do(t, h.HandleCreateBallot, "POST", req{form: url.Values{"title": {"No Name"}}}); rec.Code != http.StatusBadRequest {
+		t.Errorf("without a creator name: got %d, want 400", rec.Code)
+	}
+
+	rec := do(t, h.HandleCreateBallot, "POST", req{form: url.Values{"title": {"Test Ballot"}, "name": {"Alice"}}})
 
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("Expected status 303, got %d", rec.Code)
@@ -28,7 +32,7 @@ func TestHandleCreateBallot(t *testing.T) {
 		t.Errorf("cookie path = %q, want /ballot/%s", cookie.Path, ballotID)
 	}
 	creator, ok, err := h.participantBySecret(t.Context(), ballotID, cookie.Value)
-	if err != nil || !ok || !creator.IsCreator {
+	if err != nil || !ok || !creator.IsCreator || creator.DisplayName != "Alice" {
 		t.Errorf("cookie should identify the creator: %+v ok=%v err=%v", creator, ok, err)
 	}
 }
@@ -41,30 +45,24 @@ func TestHandleBallot_NotFound(t *testing.T) {
 	}
 }
 
-func TestHandleBallot_NewParticipant(t *testing.T) {
+// Anyone with the link can view a ballot, open or closed, without joining.
+func TestHandleBallot_Viewer(t *testing.T) {
 	h := testHandler(t)
 	ballotID, _ := newBallot(t, h)
 
-	rec := do(t, h.HandleBallot, "GET", req{path: map[string]string{"id": ballotID}})
+	for _, open := range []bool{true, false} {
+		setOpen(t, h, ballotID, open)
+		rec := do(t, h.HandleBallot, "GET", req{path: map[string]string{"id": ballotID}})
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-	participantCookieFrom(t, rec)
-	if n := countRows(t, h, "SELECT COUNT(*) FROM participants WHERE ballot_id = ?", ballotID); n != 2 {
-		t.Errorf("Expected visitor to be added as participant, got %d participants", n)
-	}
-}
-
-func TestHandleBallot_ClosedBallot_NonParticipant(t *testing.T) {
-	h := testHandler(t)
-	ballotID, _ := newBallot(t, h)
-	setOpen(t, h, ballotID, false)
-
-	rec := do(t, h.HandleBallot, "GET", req{path: map[string]string{"id": ballotID}})
-
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("Expected status 403, got %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Errorf("open=%v: expected status 200, got %d", open, rec.Code)
+		}
+		if len(rec.Result().Cookies()) != 0 {
+			t.Errorf("open=%v: viewing should set no cookie", open)
+		}
+		if n := countRows(t, h, "SELECT COUNT(*) FROM participants WHERE ballot_id = ?", ballotID); n != 1 {
+			t.Errorf("open=%v: viewing should create no participant, got %d", open, n)
+		}
 	}
 }
 
@@ -165,8 +163,8 @@ func TestHandleToggleOpen_NotParticipant(t *testing.T) {
 
 	rec := do(t, h.HandleToggleOpen, "POST", req{path: map[string]string{"id": ballotID}})
 
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("Expected status 403, got %d", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status 401, got %d", rec.Code)
 	}
 }
 
@@ -202,7 +200,7 @@ func TestHandleSetName_NotParticipant(t *testing.T) {
 		form: url.Values{"name": {"TestUser"}},
 	})
 
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("Expected status 403, got %d", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status 401, got %d", rec.Code)
 	}
 }

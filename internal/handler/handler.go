@@ -29,6 +29,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /{$}", h.HandleHome)
 	mux.HandleFunc("POST /", h.HandleCreateBallot)
 	mux.HandleFunc("GET /ballot/{id}", h.HandleBallot)
+	mux.HandleFunc("POST /ballot/{id}/join", h.HandleJoin)
 	mux.HandleFunc("GET /ballot/{id}/join/{secret}", h.HandleJoinLink)
 	mux.HandleFunc("GET /ballot/{id}/{legacySecret}", h.HandleJoinLink) // links from before per-ballot cookies
 	mux.HandleFunc("POST /ballot/{id}/items", h.HandleAddItem)

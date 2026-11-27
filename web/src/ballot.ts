@@ -14,19 +14,303 @@ import { assertNever, byId, errorMessage, escapeHtml, showError } from './ui';
 const minReconnectDelay = 1000;
 const maxReconnectDelay = 30000;
 
-// Wires up the ballot page. root carries the ballot and user IDs as data attributes.
+// Query parameter the page reloads with after losing participant access.
+const notParticipantNotice = 'notice=not-participant';
+
+// Wires up the ballot page. root carries the ballot ID, the requester's role
+// (viewer, participant, or creator), and their participant ID.
 export function initBallot(root: HTMLElement): void {
     const ballotId = root.dataset['ballotId'];
-    const currentParticipantId = root.dataset['currentParticipantId'];
-    const rankedList = byId('ranked-list', HTMLUListElement);
-    const unrankedList = byId('unranked-list', HTMLUListElement);
-
-    if (!ballotId || !currentParticipantId || !rankedList || !unrankedList) {
-        console.error('Ballot page is missing required elements');
+    if (!ballotId) {
+        console.error('Ballot page is missing its ballot ID');
         return;
     }
 
-    new BallotPage(ballotId, currentParticipantId, rankedList, unrankedList).init();
+    // The notice is shown once; keep it out of reloads and shared URLs.
+    if (location.search.includes(notParticipantNotice)) {
+        history.replaceState(null, '', location.pathname + location.hash);
+    }
+
+    if (root.dataset['role'] === 'viewer') {
+        new ViewerPage(ballotId).init();
+        return;
+    }
+
+    const participantId = root.dataset['currentParticipantId'];
+    const rankedList = byId('ranked-list', HTMLUListElement);
+    const unrankedList = byId('unranked-list', HTMLUListElement);
+    if (!participantId || !rankedList || !unrankedList) {
+        console.error('Ballot page is missing required elements');
+        return;
+    }
+    new ParticipantPage(ballotId, participantId, rankedList, unrankedList).init();
+}
+
+// LiveBallot is what every visitor sees update in real time: results, the
+// participant count and list, the open/closed state, and the item list
+// (rendered by each subclass).
+abstract class LiveBallot {
+    protected readonly participantList = byId('participant-list', HTMLUListElement);
+    protected readonly participantToggle = byId('participant-toggle', HTMLButtonElement);
+    protected cachedParticipants: ParticipantEntry[] = [];
+    private wsReconnectDelay = minReconnectDelay;
+
+    constructor(protected readonly ballotId: string) {}
+
+    init(): void {
+        this.cachedParticipants = this.readInitialParticipants();
+        this.initParticipantList();
+        this.initCopyAndShare();
+        this.connectWebSocket();
+    }
+
+    protected abstract updateItems(items: ItemEntry[], results: ResultEntry[]): void;
+    protected abstract stateChanged(isOpen: boolean): void;
+
+    // Called after any message that may change a participant's rankings.
+    protected rankingsMayHaveChanged(): void {}
+
+    // --- WebSocket ---
+
+    private connectWebSocket(): void {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${location.host}/ballot/${this.ballotId}/ws`);
+
+        ws.onmessage = (event: MessageEvent<string>) => {
+            let msg: ServerMessage;
+            try {
+                msg = JSON.parse(event.data) as ServerMessage;
+            } catch (err) {
+                console.error('Error parsing message:', err);
+                return;
+            }
+            this.handleMessage(msg);
+        };
+
+        ws.onopen = () => {
+            this.wsReconnectDelay = minReconnectDelay;
+        };
+
+        ws.onclose = () => {
+            setTimeout(() => this.connectWebSocket(), this.wsReconnectDelay);
+            this.wsReconnectDelay = Math.min(this.wsReconnectDelay * 2, maxReconnectDelay);
+        };
+
+        ws.onerror = (err) => {
+            console.error('WebSocket error:', err);
+        };
+    }
+
+    private handleMessage(msg: ServerMessage): void {
+        switch (msg.type) {
+            case 'items_changed':
+                this.updateItems(msg.items, msg.results);
+                this.updateParticipantCount(msg.participantCount);
+                this.rankingsMayHaveChanged();
+                break;
+            case 'results':
+                this.updateResultsList(msg.results);
+                this.updateParticipantCount(msg.participantCount);
+                this.rankingsMayHaveChanged();
+                break;
+            case 'state_changed':
+                this.stateChanged(msg.isOpen);
+                break;
+            case 'participants_changed':
+                this.updateItems(msg.items, msg.results);
+                this.updateParticipantCount(msg.participantCount);
+                this.updateParticipantList(msg.participants);
+                this.rankingsMayHaveChanged();
+                break;
+            default:
+                assertNever(msg);
+        }
+    }
+
+    protected updateResultsList(results: ResultEntry[]): void {
+        const list = byId('results-list', HTMLUListElement);
+        if (!list) return;
+
+        if (results.length === 0) {
+            list.innerHTML = '<li>No results yet. Add items and rank them!</li>';
+            return;
+        }
+
+        list.replaceChildren(...results.map(entry => {
+            const li = document.createElement('li');
+            li.textContent = `#${entry.rank}: ${entry.name}`;
+            return li;
+        }));
+    }
+
+    // --- Participant list ---
+
+    private initParticipantList(): void {
+        const list = this.participantList;
+        const toggle = this.participantToggle;
+        if (!list || !toggle) return;
+
+        const close = (): void => {
+            this.participantListClosed();
+            list.style.display = 'none';
+            toggle.setAttribute('aria-expanded', 'false');
+        };
+
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (list.style.display !== 'none') {
+                close();
+            } else {
+                list.style.display = 'block';
+                toggle.setAttribute('aria-expanded', 'true');
+            }
+        });
+
+        // Close participant list when clicking elsewhere
+        document.addEventListener('click', (e) => {
+            if (!list.contains(e.target as Node | null) && e.target !== toggle) {
+                close();
+            }
+        });
+    }
+
+    protected participantListClosed(): void {}
+
+    // Reads the server-rendered participant list so it can be restored later.
+    private readInitialParticipants(): ParticipantEntry[] {
+        const list = this.participantList;
+        if (!list) return [];
+
+        const participants: ParticipantEntry[] = [];
+        list.querySelectorAll<HTMLElement>('.participant-name').forEach(li => {
+            participants.push({
+                participantId: li.dataset['participantId'] ?? '',
+                displayName: li.textContent?.trim() ?? '',
+            });
+        });
+
+        const anonText = list.querySelector('.anonymous-label')?.textContent;
+        if (anonText) {
+            const count = parseInt(anonText.match(/(\d+)/)?.[1] ?? '1', 10);
+            for (let i = 0; i < count; i++) {
+                participants.push({ participantId: '', displayName: '' });
+            }
+        }
+
+        return participants;
+    }
+
+    private updateParticipantCount(count: number): void {
+        if (this.participantToggle) {
+            this.participantToggle.textContent = count === 1 ? '1 participant' : `${count} participants`;
+        }
+    }
+
+    protected updateParticipantList(participants: ParticipantEntry[]): void {
+        const list = this.participantList;
+        if (!list) return;
+
+        this.cachedParticipants = participants;
+        if (!this.canRenderParticipantList()) return;
+
+        list.innerHTML = '';
+        let anonymousCount = 0;
+
+        for (const p of participants) {
+            if (p.displayName) {
+                const li = document.createElement('li');
+                li.className = 'participant-name';
+                li.dataset['participantId'] = p.participantId;
+                li.textContent = p.displayName;
+                list.appendChild(li);
+            } else {
+                anonymousCount++;
+            }
+        }
+
+        if (anonymousCount > 0) {
+            const li = document.createElement('li');
+            li.className = 'anonymous-label';
+            li.textContent = anonymousCount === 1 ? '1 anonymous' : `${anonymousCount} anonymous`;
+            list.appendChild(li);
+        }
+    }
+
+    // False while the list is showing something else (a participant's rankings).
+    protected canRenderParticipantList(): boolean {
+        return true;
+    }
+
+    // --- Sharing ---
+
+    private initCopyAndShare(): void {
+        const ballotUrl = `${location.origin}/ballot/${this.ballotId}`;
+
+        const copyUrlBtn = byId('copy-url-btn', HTMLButtonElement);
+        copyUrlBtn?.addEventListener('click', () => copyWithFeedback(copyUrlBtn, ballotUrl));
+
+        const shareUrlBtn = byId('share-url-btn', HTMLButtonElement);
+        if (!shareUrlBtn) return;
+
+        // Hide share button if the Web Share API isn't available
+        if (!('share' in navigator)) {
+            shareUrlBtn.style.display = 'none';
+            return;
+        }
+
+        shareUrlBtn.addEventListener('click', async () => {
+            const ballotTitle = document.querySelector('.ballot-header h1')?.textContent || 'Ballot';
+            try {
+                await navigator.share({
+                    title: ballotTitle,
+                    text: `Vote on: ${ballotTitle}`,
+                    url: ballotUrl,
+                });
+            } catch (err) {
+                // User cancelled or error occurred
+                if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                    console.error('Failed to share:', err);
+                }
+            }
+        });
+    }
+}
+
+// ViewerPage is the ballot as seen by someone who hasn't joined: read-only
+// items, live results, and a Join form while the ballot is open.
+class ViewerPage extends LiveBallot {
+    private readonly itemList = byId('viewer-items', HTMLUListElement);
+
+    protected updateItems(items: ItemEntry[], results: ResultEntry[]): void {
+        this.updateResultsList(results);
+        const list = this.itemList;
+        if (!list) return;
+
+        if (items.length === 0) {
+            list.innerHTML = '<li class="empty-state">No items yet</li>';
+            return;
+        }
+        list.replaceChildren(...items.map(item => {
+            const li = document.createElement('li');
+            li.className = 'ranked-item';
+            li.innerHTML = `
+                <span class="item-name">${escapeHtml(item.name)}</span>
+                <span class="item-meta"></span>
+            `;
+            if (item.addedByName) {
+                const attr = document.createElement('span');
+                attr.className = 'item-attribution';
+                attr.textContent = item.addedByName;
+                li.querySelector('.item-meta')?.appendChild(attr);
+            }
+            return li;
+        }));
+    }
+
+    // Opening or closing changes whether the Join form is offered.
+    protected stateChanged(): void {
+        location.reload();
+    }
 }
 
 interface ViewedParticipant {
@@ -34,33 +318,44 @@ interface ViewedParticipant {
     name: string;
 }
 
-class BallotPage {
-    private readonly participantList = byId('participant-list', HTMLUListElement);
-    private readonly participantToggle = byId('participant-toggle', HTMLButtonElement);
-
+// ParticipantPage is the ballot for someone who has joined: they can add and
+// delete items, drag to rank, rename themselves, and view others' rankings.
+class ParticipantPage extends LiveBallot {
     private rankingSaveTimeout: ReturnType<typeof setTimeout> | undefined;
-    private wsReconnectDelay = minReconnectDelay;
     private viewing: ViewedParticipant | null = null;
-    private cachedParticipants: ParticipantEntry[] = [];
 
     constructor(
-        private readonly ballotId: string,
-        private readonly currentParticipantId: string,
+        ballotId: string,
+        private readonly participantId: string,
         private readonly rankedList: HTMLUListElement,
         private readonly unrankedList: HTMLUListElement,
-    ) {}
+    ) {
+        super(ballotId);
+    }
 
-    init(): void {
-        this.cachedParticipants = this.readInitialParticipants();
-
+    override init(): void {
+        super.init();
         this.initAddItem();
         this.initDeleteItem();
         this.initDisplayName();
-        this.initParticipantList();
+        this.initRankingsView();
         this.initSortable();
         this.initToggleOpen();
-        this.initCopyAndShare();
-        this.connectWebSocket();
+        this.initDeviceLink();
+    }
+
+    // fetch for participant-only endpoints. A 401 means this browser is no
+    // longer a participant (removed, link reset, or cookie lost), so the
+    // page reloads as a viewer with a notice; the returned promise never
+    // settles in that case.
+    private participantFetch(input: string, init?: RequestInit): Promise<Response> {
+        return fetch(input, init).then(response => {
+            if (response.status === 401) {
+                location.replace(`/ballot/${this.ballotId}?${notParticipantNotice}`);
+                return new Promise<Response>(() => {});
+            }
+            return response;
+        });
     }
 
     // --- Items ---
@@ -78,7 +373,7 @@ class BallotPage {
 
             submitBtn.disabled = true;
 
-            fetch(form.action, {
+            this.participantFetch(form.action, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ name }),
@@ -112,7 +407,7 @@ class BallotPage {
             const deleteBtn = form.querySelector<HTMLButtonElement>('.delete-btn');
             if (deleteBtn) deleteBtn.disabled = true;
 
-            fetch(form.action, { method: 'POST' }).then(async response => {
+            this.participantFetch(form.action, { method: 'POST' }).then(async response => {
                 if (!response.ok) {
                     throw new Error((await response.text()) || 'Failed to delete item');
                 }
@@ -131,7 +426,7 @@ class BallotPage {
         ];
     }
 
-    private updateItems(items: ItemEntry[], results: ResultEntry[]): void {
+    protected updateItems(items: ItemEntry[], results: ResultEntry[]): void {
         const existing = this.itemElements();
         const existingIds = new Set(existing.map(itemId));
         const newItemsById = new Map(items.map(item => [item.id, item]));
@@ -199,8 +494,8 @@ class BallotPage {
             metaSpan.appendChild(attrSpan);
         }
 
-        // Add delete button if current user owns it
-        if (item.addedBy === this.currentParticipantId) {
+        // Add delete button if this participant added it
+        if (item.addedBy === this.participantId) {
             const deleteForm = document.createElement('form');
             deleteForm.method = 'POST';
             deleteForm.action = `/ballot/${this.ballotId}/items/${item.id}/delete`;
@@ -246,7 +541,7 @@ class BallotPage {
 
             this.updateEmptyStates();
 
-            fetch(`/ballot/${this.ballotId}/rankings`, {
+            this.participantFetch(`/ballot/${this.ballotId}/rankings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
@@ -263,82 +558,7 @@ class BallotPage {
         }, 300);
     }
 
-    private updateResultsList(results: ResultEntry[]): void {
-        const list = byId('results-list', HTMLUListElement);
-        if (!list) return;
-
-        if (results.length === 0) {
-            list.innerHTML = '<li>No results yet. Add items and rank them!</li>';
-            return;
-        }
-
-        list.replaceChildren(...results.map(entry => {
-            const li = document.createElement('li');
-            li.textContent = `#${entry.rank}: ${entry.name}`;
-            return li;
-        }));
-    }
-
-    // --- WebSocket ---
-
-    private connectWebSocket(): void {
-        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${location.host}/ballot/${this.ballotId}/ws`);
-
-        ws.onmessage = (event: MessageEvent<string>) => {
-            let msg: ServerMessage;
-            try {
-                msg = JSON.parse(event.data) as ServerMessage;
-            } catch (err) {
-                console.error('Error parsing message:', err);
-                return;
-            }
-            this.handleMessage(msg);
-        };
-
-        ws.onopen = () => {
-            console.log('WebSocket connected');
-            this.wsReconnectDelay = minReconnectDelay;
-        };
-
-        ws.onclose = () => {
-            console.log(`WebSocket closed, reconnecting in ${this.wsReconnectDelay}ms...`);
-            setTimeout(() => this.connectWebSocket(), this.wsReconnectDelay);
-            this.wsReconnectDelay = Math.min(this.wsReconnectDelay * 2, maxReconnectDelay);
-        };
-
-        ws.onerror = (err) => {
-            console.error('WebSocket error:', err);
-        };
-    }
-
-    private handleMessage(msg: ServerMessage): void {
-        switch (msg.type) {
-            case 'items_changed':
-                this.updateItems(msg.items, msg.results);
-                this.updateParticipantCount(msg.participantCount);
-                this.refreshViewedParticipant();
-                break;
-            case 'results':
-                this.updateResultsList(msg.results);
-                this.updateParticipantCount(msg.participantCount);
-                this.refreshViewedParticipant();
-                break;
-            case 'state_changed':
-                updateToggleUI(msg.isOpen);
-                break;
-            case 'participants_changed':
-                this.updateItems(msg.items, msg.results);
-                this.updateParticipantCount(msg.participantCount);
-                this.updateParticipantList(msg.participants);
-                this.refreshViewedParticipant();
-                break;
-            default:
-                assertNever(msg);
-        }
-    }
-
-    // --- Participants ---
+    // --- Self ---
 
     private initDisplayName(): void {
         const input = byId('display-name', HTMLInputElement);
@@ -353,7 +573,7 @@ class BallotPage {
             if (name === saved) return;
             saved = name;
 
-            fetch(`/ballot/${this.ballotId}/name`, {
+            this.participantFetch(`/ballot/${this.ballotId}/name`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ name }),
@@ -375,36 +595,19 @@ class BallotPage {
         });
     }
 
-    private initParticipantList(): void {
-        const list = this.participantList;
-        const toggle = this.participantToggle;
-        if (!list || !toggle) return;
+    // Personal link: signs another browser in as this participant.
+    private initDeviceLink(): void {
+        const button = byId('device-link-btn', HTMLButtonElement);
+        const link = button?.dataset['link'];
+        if (button && link) {
+            button.addEventListener('click', () => copyWithFeedback(button, location.origin + link));
+        }
+    }
 
-        const close = (): void => {
-            this.restoreParticipantList();
-            list.style.display = 'none';
-            toggle.setAttribute('aria-expanded', 'false');
-        };
+    // --- Other participants' rankings ---
 
-        toggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (list.style.display !== 'none') {
-                close();
-            } else {
-                list.style.display = 'block';
-                toggle.setAttribute('aria-expanded', 'true');
-            }
-        });
-
-        // Close participant list when clicking elsewhere
-        document.addEventListener('click', (e) => {
-            if (!list.contains(e.target as Node | null) && e.target !== toggle) {
-                close();
-            }
-        });
-
-        // Click a participant to view their rankings
-        list.addEventListener('click', (e) => {
+    private initRankingsView(): void {
+        this.participantList?.addEventListener('click', (e) => {
             const target = (e.target as Element | null)?.closest<HTMLElement>('.participant-name');
             const id = target?.dataset['participantId'];
             if (!target || !id) return;
@@ -412,65 +615,17 @@ class BallotPage {
         });
     }
 
-    // Reads the server-rendered participant list so it can be restored later.
-    private readInitialParticipants(): ParticipantEntry[] {
-        const list = this.participantList;
-        if (!list) return [];
-
-        const participants: ParticipantEntry[] = [];
-        list.querySelectorAll<HTMLElement>('.participant-name').forEach(li => {
-            participants.push({
-                participantId: li.dataset['participantId'] ?? '',
-                displayName: li.textContent?.trim() ?? '',
-            });
-        });
-
-        const anonText = list.querySelector('.anonymous-label')?.textContent;
-        if (anonText) {
-            const count = parseInt(anonText.match(/(\d+)/)?.[1] ?? '1', 10);
-            for (let i = 0; i < count; i++) {
-                participants.push({ participantId: '', displayName: '' });
-            }
-        }
-
-        return participants;
+    protected override canRenderParticipantList(): boolean {
+        return this.viewing === null;
     }
 
-    private updateParticipantCount(count: number): void {
-        if (this.participantToggle) {
-            this.participantToggle.textContent = count === 1 ? '1 participant' : `${count} participants`;
-        }
+    protected override participantListClosed(): void {
+        this.restoreParticipantList();
     }
 
-    private updateParticipantList(participants: ParticipantEntry[]): void {
-        const list = this.participantList;
-        if (!list) return;
-
-        this.cachedParticipants = participants;
-
-        // If currently viewing a specific participant's rankings, keep that view
-        if (this.viewing) return;
-
-        list.innerHTML = '';
-        let anonymousCount = 0;
-
-        for (const p of participants) {
-            if (p.displayName) {
-                const li = document.createElement('li');
-                li.className = 'participant-name';
-                li.dataset['participantId'] = p.participantId;
-                li.textContent = p.displayName;
-                list.appendChild(li);
-            } else {
-                anonymousCount++;
-            }
-        }
-
-        if (anonymousCount > 0) {
-            const li = document.createElement('li');
-            li.className = 'anonymous-label';
-            li.textContent = anonymousCount === 1 ? '1 anonymous' : `${anonymousCount} anonymous`;
-            list.appendChild(li);
+    protected override rankingsMayHaveChanged(): void {
+        if (this.viewing) {
+            this.showParticipantRankings(this.viewing);
         }
     }
 
@@ -479,19 +634,13 @@ class BallotPage {
         this.updateParticipantList(this.cachedParticipants);
     }
 
-    private refreshViewedParticipant(): void {
-        if (this.viewing) {
-            this.showParticipantRankings(this.viewing);
-        }
-    }
-
     private showParticipantRankings(participant: ViewedParticipant): void {
         const list = this.participantList;
         if (!list) return;
 
         this.viewing = participant;
 
-        fetch(`/ballot/${this.ballotId}/rankings/${encodeURIComponent(participant.id)}`)
+        this.participantFetch(`/ballot/${this.ballotId}/rankings/${encodeURIComponent(participant.id)}`)
             .then(response => {
                 if (!response.ok) throw new Error('Failed to fetch rankings');
                 return response.json() as Promise<RankedItem[]>;
@@ -538,69 +687,28 @@ class BallotPage {
             });
     }
 
-    // --- Ballot access and sharing ---
+    // --- Ballot access ---
+
+    protected stateChanged(isOpen: boolean): void {
+        updateToggleUI(isOpen);
+    }
 
     private initToggleOpen(): void {
         const toggleBtn = byId('toggle-open-btn', HTMLButtonElement);
         if (!toggleBtn) return;
 
         toggleBtn.addEventListener('click', () => {
-            fetch(`/ballot/${this.ballotId}/toggle`, { method: 'POST' })
-                .then(response => {
+            this.participantFetch(`/ballot/${this.ballotId}/toggle`, { method: 'POST' })
+                .then(async response => {
                     if (!response.ok) {
-                        console.error('Error toggling ballot state');
-                        return null;
+                        throw new Error((await response.text()) || 'Failed to toggle ballot state');
                     }
                     return response.json() as Promise<ToggleResponse>;
                 })
-                .then(data => {
-                    if (data) {
-                        updateToggleUI(data.isOpen);
-                    }
-                })
+                .then(data => updateToggleUI(data.isOpen))
                 .catch((err: unknown) => {
-                    console.error('Error toggling ballot state:', err);
-                    showError('Failed to toggle ballot state. Please try again.');
+                    showError(errorMessage(err));
                 });
-        });
-    }
-
-    private initCopyAndShare(): void {
-        const ballotUrl = `${location.origin}/ballot/${this.ballotId}`;
-
-        const copyUrlBtn = byId('copy-url-btn', HTMLButtonElement);
-        copyUrlBtn?.addEventListener('click', () => copyWithFeedback(copyUrlBtn, ballotUrl));
-
-        // Personal link: signs another browser in as this participant.
-        const deviceLinkBtn = byId('device-link-btn', HTMLButtonElement);
-        const deviceLink = deviceLinkBtn?.dataset['link'];
-        if (deviceLinkBtn && deviceLink) {
-            deviceLinkBtn.addEventListener('click', () => copyWithFeedback(deviceLinkBtn, location.origin + deviceLink));
-        }
-
-        const shareUrlBtn = byId('share-url-btn', HTMLButtonElement);
-        if (!shareUrlBtn) return;
-
-        // Hide share button if the Web Share API isn't available
-        if (!('share' in navigator)) {
-            shareUrlBtn.style.display = 'none';
-            return;
-        }
-
-        shareUrlBtn.addEventListener('click', async () => {
-            const ballotTitle = document.querySelector('.ballot-header h1')?.textContent || 'Ballot';
-            try {
-                await navigator.share({
-                    title: ballotTitle,
-                    text: `Vote on: ${ballotTitle}`,
-                    url: ballotUrl,
-                });
-            } catch (err) {
-                // User cancelled or error occurred
-                if (!(err instanceof DOMException && err.name === 'AbortError')) {
-                    console.error('Failed to share:', err);
-                }
-            }
         });
     }
 }

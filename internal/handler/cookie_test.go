@@ -57,8 +57,8 @@ func TestCookieIsPerBallot(t *testing.T) {
 	setOpen(t, h, ballotB, false)
 
 	rec := do(t, h.HandleToggleOpen, "POST", req{as: &creatorA, path: map[string]string{"id": ballotB}})
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("ballot A's creator toggling ballot B: got %d, want 403", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("ballot A's creator toggling ballot B: got %d, want 401", rec.Code)
 	}
 	if rec := do(t, h.HandleToggleOpen, "POST", req{as: &creatorA, path: map[string]string{"id": ballotA}}); rec.Code != http.StatusOK {
 		t.Errorf("toggling own ballot: got %d, want 200", rec.Code)
@@ -124,7 +124,7 @@ func TestLegacyVoterIDUpgrade(t *testing.T) {
 		path:    map[string]string{"id": otherBallot},
 		form:    map[string][]string{"name": {"X"}},
 	})
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("legacy cookie on a ballot it never joined: got %d, want 403", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("legacy cookie on a ballot it never joined: got %d, want 401", rec.Code)
 	}
 }

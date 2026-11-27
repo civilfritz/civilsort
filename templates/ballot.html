@@ -17,12 +17,16 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-current-participant-id="{{.CurrentParticipantID}}">
+<main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-role="{{.Role}}" data-current-participant-id="{{.CurrentParticipantID}}">
 <div class="container ballot">
     <div class="ballot-header">
+        {{if eq .Role "viewer"}}
+        <span id="ballot-status" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}">{{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}</span>
+        {{else}}
         <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}" aria-label="Toggle ballot access - controls whether new participants can join">
             {{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}
         </button>
+        {{end}}
         <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
         <div class="menu-wrapper" id="menu-wrapper">
             <button class="hamburger-menu" id="hamburger-menu" aria-label="Menu">☰</button>
@@ -31,7 +35,9 @@
                     <a href="/" class="menu-item">New Ballot</a>
                     <button class="menu-item" id="copy-url-btn" aria-label="Copy ballot URL">Copy Link</button>
                     <button class="menu-item" id="share-url-btn" aria-label="Share ballot">Share</button>
+                    {{if ne .Role "viewer"}}
                     <button class="menu-item" id="device-link-btn" data-link="{{.JoinLink}}" aria-label="Copy your personal link for using this ballot on another device">Use on another device</button>
+                    {{end}}
                     <button class="menu-item theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">Light/Dark</button>
                     <a href="/about?from={{.Ballot.ID}}" class="menu-item">About</a>
                 </nav>
@@ -39,10 +45,29 @@
         </div>
     </div>
 
+    {{if .Notice}}
+    <p class="notice" role="status">You're no longer a participant on this ballot.</p>
+    {{end}}
+
+    {{if eq .Role "viewer"}}
+    <div class="join-panel">
+        {{if .Ballot.IsOpen}}
+        <form method="POST" action="/ballot/{{.Ballot.ID}}/join" class="add-item-form join-form">
+            <label for="join-name" class="sr-only">Your name (visible to other participants)</label>
+            <input type="text" id="join-name" name="name" placeholder="Your name" required maxlength="50" autocomplete="name">
+            <button type="submit">Join this ballot</button>
+        </form>
+        <p class="help-text">You're viewing this ballot. Join to add items and rank them.</p>
+        {{else}}
+        <p class="help-text">You're viewing this ballot. It's closed to new participants.</p>
+        {{end}}
+    </div>
+    {{else}}
     <div class="your-name-row">
         <label for="display-name" class="sr-only">Your display name (visible to other participants)</label>
-        <input type="text" id="display-name" placeholder="Your name (optional - visible to others)" maxlength="50" value="{{.DisplayName}}" autocomplete="off">
+        <input type="text" id="display-name" placeholder="Your name (visible to others)" maxlength="50" value="{{.DisplayName}}" autocomplete="off">
     </div>
+    {{end}}
 
     <div class="participant-info">
         <button type="button" class="participant-count" id="participant-toggle">
@@ -66,51 +91,32 @@
     </div>
 
     <div id="ballot-tab" class="tab-panel active" role="tabpanel" aria-labelledby="ballot-tab">
+        {{if eq .Role "viewer"}}
+        <h2 class="zone-label">Items</h2>
+        <ul id="viewer-items" class="ranking-list">
+            {{range .Items}}
+            <li class="ranked-item">
+                <span class="item-name">{{.Name}}</span>
+                <span class="item-meta">{{if .AddedByName}}<span class="item-attribution">{{.AddedByName}}</span>{{end}}</span>
+            </li>
+            {{else}}
+            <li class="empty-state">No items yet</li>
+            {{end}}
+        </ul>
+        {{else}}
         <p class="help-text">Drag items between zones. Ranked items appear in results; unranked items don't. To invite others, use Copy Link or Share in the menu (☰).</p>
 
         <h2 class="zone-label">Ranked (top = most preferred)</h2>
         <ul id="ranked-list" class="ranking-list ranked-zone">
-            {{if not .RankedItems}}
+            {{range .RankedItems}}{{template "ballot-item" .}}{{else}}
             <li class="empty-state">Drag items here to rank them</li>
-            {{end}}
-            {{range .RankedItems}}
-            <li data-item-id="{{.ID}}" class="ranked-item">
-                <span class="drag-handle" aria-label="Drag to reorder">☰</span>
-                <span class="item-name">{{.Name}}</span>
-                <span class="item-meta">
-                    {{if .AddedByName}}
-                        <span class="item-attribution">{{.AddedByName}}</span>
-                    {{end}}
-                    {{if eq .AddedBy $.CurrentParticipantID}}
-                        <form method="POST" action="/ballot/{{$.Ballot.ID}}/items/{{.ID}}/delete" class="delete-form">
-                            <button type="submit" class="delete-btn">Delete</button>
-                        </form>
-                    {{end}}
-                </span>
-            </li>
             {{end}}
         </ul>
 
         <h2 class="zone-label">Unranked (no preference)</h2>
         <ul id="unranked-list" class="ranking-list unranked-zone">
-            {{if not .UnrankedItems}}
+            {{range .UnrankedItems}}{{template "ballot-item" .}}{{else}}
             <li class="empty-state">Add items below - unranked items won't affect results</li>
-            {{end}}
-            {{range .UnrankedItems}}
-            <li data-item-id="{{.ID}}" class="ranked-item">
-                <span class="drag-handle" aria-label="Drag to reorder">☰</span>
-                <span class="item-name">{{.Name}}</span>
-                <span class="item-meta">
-                    {{if .AddedByName}}
-                        <span class="item-attribution">{{.AddedByName}}</span>
-                    {{end}}
-                    {{if eq .AddedBy $.CurrentParticipantID}}
-                        <form method="POST" action="/ballot/{{$.Ballot.ID}}/items/{{.ID}}/delete" class="delete-form">
-                            <button type="submit" class="delete-btn">Delete</button>
-                        </form>
-                    {{end}}
-                </span>
-            </li>
             {{end}}
         </ul>
 
@@ -118,16 +124,15 @@
             <input type="text" name="name" placeholder="Add new item..." required maxlength="200">
             <button type="submit">Add</button>
         </form>
+        {{end}}
     </div>
 
     <div id="results-tab" class="tab-panel" role="tabpanel" aria-labelledby="results-tab">
         <h2>Results</h2>
         <p class="help-text">Rankings computed using the <a href="/about?from={{.Ballot.ID}}" target="_blank" rel="noopener noreferrer">Schulze method</a> - a fair, cycle-resistant voting algorithm.</p>
         <ul id="results-list" class="results-list">
-            {{if .Results}}
-                {{range .Results}}
-                <li>#{{.Rank}}: {{.Name}}</li>
-                {{end}}
+            {{range .Results}}
+            <li>#{{.Rank}}: {{.Name}}</li>
             {{else}}
             <li>No rankings yet. Add items and rank them to see results!</li>
             {{end}}
@@ -139,3 +144,18 @@
 <script src="/static/app.js"></script>
 </body>
 </html>
+
+{{define "ballot-item"}}
+<li data-item-id="{{.ID}}" class="ranked-item">
+    <span class="drag-handle" aria-label="Drag to reorder">☰</span>
+    <span class="item-name">{{.Name}}</span>
+    <span class="item-meta">
+        {{if .AddedByName}}<span class="item-attribution">{{.AddedByName}}</span>{{end}}
+        {{if .CanDelete}}
+        <form method="POST" action="/ballot/{{.BallotID}}/items/{{.ID}}/delete" class="delete-form">
+            <button type="submit" class="delete-btn">Delete</button>
+        </form>
+        {{end}}
+    </span>
+</li>
+{{end}}

@@ -54,7 +54,7 @@ func TestHandleGetRankings_Access(t *testing.T) {
 	if code := get(&viewer, target.Secret); code != http.StatusNotFound {
 		t.Errorf("lookup by secret: got %d, want 404", code)
 	}
-	if code := get(nil, target.ID); code != http.StatusForbidden {
-		t.Errorf("non-participant: got %d, want 403", code)
+	if code := get(nil, target.ID); code != http.StatusUnauthorized {
+		t.Errorf("viewer: got %d, want 401", code)
 	}
 }

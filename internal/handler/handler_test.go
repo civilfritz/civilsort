@@ -32,7 +32,6 @@ func testHandler(t *testing.T) *Handler {
 {{define "ballot.html"}}<html></html>{{end}}
 {{define "about.html"}}<html></html>{{end}}
 {{define "stats.html"}}<html></html>{{end}}
-{{define "closed.html"}}<html></html>{{end}}
 `
 	tmpls := template.Must(template.New("").Parse(tmplText))
 
@@ -64,7 +63,7 @@ func join(t *testing.T, h *Handler, ballotID string) participant {
 
 func addMember(t *testing.T, h *Handler, ballotID string, isCreator bool) participant {
 	t.Helper()
-	p, err := h.addParticipant(context.Background(), ballotID, isCreator)
+	p, err := h.addParticipant(context.Background(), ballotID, "Member", isCreator)
 	if err != nil {
 		t.Fatalf("addParticipant: %v", err)
 	}

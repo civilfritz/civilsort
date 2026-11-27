@@ -33,6 +33,11 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	title := cleanText(r.FormValue("title"), maxNameLength)
+	name := cleanText(r.FormValue("name"), maxDisplayNameLength)
+	if name == "" {
+		http.Error(w, "Please enter your name.", http.StatusBadRequest)
+		return
+	}
 	ballotID := generateBallotID()
 
 	_, err := h.db.ExecContext(r.Context(),
@@ -44,7 +49,7 @@ func (h *Handler) HandleCreateBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	creator, err := h.addParticipant(r.Context(), ballotID, true)
+	creator, err := h.addParticipant(r.Context(), ballotID, name, true)
 	if err != nil {
 		log.Printf("Error adding creator as participant: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -76,26 +81,17 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !isParticipant {
-		if !ballot.IsOpen {
-			w.WriteHeader(http.StatusForbidden)
-			if err := h.templates.ExecuteTemplate(w, "closed.html", nil); err != nil {
-				log.Printf("Error rendering closed page: %v", err)
-			}
-			return
+	// Anyone with the link can view; only participants get a cookie. Viewing
+	// never writes to the database.
+	role := "viewer"
+	if isParticipant {
+		role = "participant"
+		if current.IsCreator {
+			role = "creator"
 		}
-
-		current, err = h.addParticipant(r.Context(), ballotID, false)
-		if err != nil {
-			log.Printf("Error adding participant: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-		h.broadcastParticipantsChanged(r.Context(), ballotID)
+		// Refresh the cookie so it expires a year after the last visit.
+		setParticipantCookie(w, r, ballotID, current.Secret)
 	}
-
-	// Set or refresh the cookie so it expires a year after the last visit.
-	setParticipantCookie(w, r, ballotID, current.Secret)
 
 	// 4. Render ballot
 	// Get all items with display names
@@ -106,37 +102,32 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current participant's ranking
-	rankings, err := h.getRankings(r.Context(), ballotID, current.ID)
-	if err != nil {
-		log.Printf("Error fetching rankings: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Split items into ranked and unranked
-	rankedItems := make([]model.Item, 0)
-	unrankedItems := make([]model.Item, 0)
-
-	rankMap := make(map[int64]int)
-	for _, r := range rankings {
-		rankMap[r.ItemID] = r.Position
-	}
-
-	for _, item := range items {
-		if _, ranked := rankMap[item.ID]; ranked {
-			rankedItems = append(rankedItems, item)
-		} else {
-			unrankedItems = append(unrankedItems, item)
+	// Split the participant's items into their ranked order and the rest.
+	// Viewers have no rankings, so everything is unranked.
+	var rankings []model.Ranking
+	if isParticipant {
+		rankings, err = h.getRankings(r.Context(), ballotID, current.ID)
+		if err != nil {
+			log.Printf("Error fetching rankings: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
 		}
 	}
-
-	// Sort ranked items by position
-	for i := 0; i < len(rankedItems); i++ {
-		for j := i + 1; j < len(rankedItems); j++ {
-			if rankMap[rankedItems[i].ID] > rankMap[rankedItems[j].ID] {
-				rankedItems[i], rankedItems[j] = rankedItems[j], rankedItems[i]
-			}
+	byID := make(map[int64]itemView, len(items))
+	for _, item := range items {
+		byID[item.ID] = itemView{Item: item, CanDelete: isParticipant && item.AddedBy == current.ID}
+	}
+	rankedItems := make([]itemView, 0, len(rankings))
+	for _, ranking := range rankings { // already in position order
+		if v, ok := byID[ranking.ItemID]; ok {
+			rankedItems = append(rankedItems, v)
+			delete(byID, ranking.ItemID)
+		}
+	}
+	unrankedItems := make([]itemView, 0, len(byID))
+	for _, item := range items {
+		if v, ok := byID[item.ID]; ok {
+			unrankedItems = append(unrankedItems, v)
 		}
 	}
 
@@ -173,6 +164,9 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		"ParticipantCount":     len(participants),
 		"CurrentParticipantID": current.ID,
 		"JoinLink":             joinLink(ballotID, current),
+		"Role":                 role,
+		"Items":                items,
+		"Notice":               r.URL.Query().Get("notice") == "not-participant",
 		"Participants":         participants,
 		"DisplayName":          current.DisplayName,
 		"AnonymousCount":       anonymousCount,
@@ -184,11 +178,17 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// itemView is an item as rendered for the current requester.
+type itemView struct {
+	model.Item
+	CanDelete bool
+}
+
 // HandleAddItem adds a new item to the ballot.
 func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	_, current, ok := h.checkBallotAccess(w, r, ballotID)
+	_, current, ok := h.requireParticipant(w, r, ballotID)
 	if !ok {
 		return
 	}
@@ -223,7 +223,7 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	_, current, ok := h.checkBallotAccess(w, r, ballotID)
+	_, current, ok := h.requireParticipant(w, r, ballotID)
 	if !ok {
 		return
 	}
@@ -266,7 +266,7 @@ func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	_, current, ok := h.checkBallotAccess(w, r, ballotID)
+	_, current, ok := h.requireParticipant(w, r, ballotID)
 	if !ok {
 		return
 	}
@@ -341,21 +341,13 @@ func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	// Only authorized participants can toggle
-	_, isParticipant, err := h.currentParticipant(w, r, ballotID)
-	if err != nil {
-		log.Printf("Error checking participant for toggle: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if !isParticipant {
-		http.Error(w, "This ballot is currently closed.", http.StatusForbidden)
+	if _, _, ok := h.requireParticipant(w, r, ballotID); !ok {
 		return
 	}
 
 	// Toggle: flip is_open between 0 and 1
 	var newIsOpenInt int
-	err = h.db.QueryRowContext(r.Context(),
+	err := h.db.QueryRowContext(r.Context(),
 		"UPDATE ballots SET is_open = NOT is_open WHERE id = ? RETURNING is_open",
 		ballotID).Scan(&newIsOpenInt)
 	if err != nil {
@@ -376,10 +368,8 @@ func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleSetName(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	// Verify user is a participant
-	current, isParticipant, err := h.currentParticipant(w, r, ballotID)
-	if err != nil || !isParticipant {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	_, current, ok := h.requireParticipant(w, r, ballotID)
+	if !ok {
 		return
 	}
 
@@ -390,7 +380,7 @@ func (h *Handler) HandleSetName(w http.ResponseWriter, r *http.Request) {
 
 	displayName := cleanText(r.FormValue("name"), maxDisplayNameLength)
 
-	_, err = h.db.ExecContext(r.Context(),
+	_, err := h.db.ExecContext(r.Context(),
 		"UPDATE participants SET display_name = ? WHERE ballot_id = ? AND id = ?",
 		displayName, ballotID, current.ID)
 	if err != nil {
@@ -421,42 +411,6 @@ func (h *Handler) loadBallot(w http.ResponseWriter, r *http.Request, ballotID st
 		return nil
 	}
 	return &ballot
-}
-
-// checkBallotAccess verifies the requester can act on the ballot and returns
-// it with their participant. On failure it writes an HTTP error and ok is
-// false. If the ballot is open and the requester is new, they are added as a
-// participant.
-func (h *Handler) checkBallotAccess(w http.ResponseWriter, r *http.Request, ballotID string) (ballot *model.Ballot, current participant, ok bool) {
-	ballot = h.loadBallot(w, r, ballotID)
-	if ballot == nil {
-		return nil, participant{}, false
-	}
-
-	current, isParticipant, err := h.currentParticipant(w, r, ballotID)
-	if err != nil {
-		log.Printf("Error checking participant: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return nil, participant{}, false
-	}
-	if isParticipant {
-		return ballot, current, true
-	}
-
-	if !ballot.IsOpen {
-		http.Error(w, "This ballot is currently closed.", http.StatusForbidden)
-		return nil, participant{}, false
-	}
-
-	current, err = h.addParticipant(r.Context(), ballotID, false)
-	if err != nil {
-		log.Printf("Error adding participant: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return nil, participant{}, false
-	}
-	setParticipantCookie(w, r, ballotID, current.Secret)
-	h.broadcastParticipantsChanged(r.Context(), ballotID)
-	return ballot, current, true
 }
 
 // getItems retrieves all items for a ballot with display names.
@@ -703,19 +657,12 @@ func (h *Handler) HandleGetRankings(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 	targetID := r.PathValue("participantID")
 
-	_, isParticipant, err := h.currentParticipant(w, r, ballotID)
-	if err != nil {
-		log.Printf("Error checking participant: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	if !isParticipant {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	if _, _, ok := h.requireParticipant(w, r, ballotID); !ok {
 		return
 	}
 
 	var exists bool
-	err = h.db.QueryRowContext(r.Context(),
+	err := h.db.QueryRowContext(r.Context(),
 		"SELECT EXISTS(SELECT 1 FROM participants WHERE ballot_id = ? AND id = ? AND removed_at IS NULL)",
 		ballotID, targetID).Scan(&exists)
 	if err != nil {
