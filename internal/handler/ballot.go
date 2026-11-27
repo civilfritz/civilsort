@@ -169,6 +169,7 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 		"Role":                 role,
 		"Items":                items,
 		"Notice":               r.URL.Query().Get("notice") == "not-participant",
+		"RankingsPrivate":      ballot.RankingsPrivate,
 		"Participants":         participants,
 		"DisplayName":          current.DisplayName,
 		"AnonymousCount":       anonymousCount,
@@ -360,8 +361,7 @@ func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	ballot, _, ok := h.requireCreator(w, r, ballotID)
-	if !ok {
+	if _, _, ok := h.requireCreator(w, r, ballotID); !ok {
 		return
 	}
 
@@ -378,7 +378,7 @@ func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 	newIsOpen := newIsOpenInt == 1
 
 	// Broadcast state change via WebSocket
-	h.broadcastStateChange(ballotID, newIsOpen, ballot.Title)
+	h.broadcastState(r.Context(), ballotID)
 
 	// Return JSON with the new state
 	writeJSON(w, protocol.ToggleResponse{IsOpen: newIsOpen})
@@ -656,9 +656,17 @@ func (h *Handler) broadcastParticipantsChanged(ctx context.Context, ballotID str
 	h.send(ballotID, protocol.NewParticipantsChangedMessage(s.results, s.items, s.participants))
 }
 
-// broadcastStateChange broadcasts the ballot's creator-controlled settings.
-func (h *Handler) broadcastStateChange(ballotID string, isOpen bool, title string) {
-	h.send(ballotID, protocol.NewStateChangedMessage(isOpen, title))
+// broadcastState broadcasts the ballot's current creator-controlled settings.
+func (h *Handler) broadcastState(ctx context.Context, ballotID string) {
+	var b model.Ballot
+	err := h.db.QueryRowContext(ctx,
+		"SELECT is_open, title, rankings_private FROM ballots WHERE id = ?", ballotID,
+	).Scan(&b.IsOpen, &b.Title, &b.RankingsPrivate)
+	if err != nil {
+		log.Printf("Error loading ballot state for broadcast: %v", err)
+		return
+	}
+	h.send(ballotID, protocol.NewStateChangedMessage(b.IsOpen, b.Title, b.RankingsPrivate))
 }
 
 // send marshals msg and broadcasts it to all WebSocket clients on a ballot.
@@ -672,12 +680,18 @@ func (h *Handler) send(ballotID string, msg any) {
 }
 
 // HandleGetRankings returns a participant's ranked items in order.
-// Only participants of the ballot may view each other's rankings.
+// Only participants of the ballot may view each other's rankings, and only
+// while the ballot's rankings are visible.
 func (h *Handler) HandleGetRankings(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 	targetID := r.PathValue("participantID")
 
-	if _, _, ok := h.requireParticipant(w, r, ballotID); !ok {
+	ballot, current, ok := h.requireParticipant(w, r, ballotID)
+	if !ok {
+		return
+	}
+	if ballot.RankingsPrivate && targetID != current.ID {
+		http.Error(w, "Rankings on this ballot are private.", http.StatusForbidden)
 		return
 	}
 

@@ -56,6 +56,7 @@ abstract class LiveBallot {
     protected readonly participantList = byId('participant-list', HTMLUListElement);
     protected readonly participantToggle = byId('participant-toggle', HTMLButtonElement);
     protected cachedParticipants: ParticipantEntry[] = [];
+    protected rankingsPrivate = document.getElementById('ballot')?.dataset['rankingsPrivate'] === 'true';
     private wsReconnectDelay = minReconnectDelay;
 
     constructor(protected readonly ballotId: string) {}
@@ -147,6 +148,8 @@ abstract class LiveBallot {
                 this.rankingsMayHaveChanged();
                 break;
             case 'state_changed':
+                this.rankingsPrivate = msg.rankingsPrivate;
+                updateVisibilityUI(msg.rankingsPrivate);
                 this.stateChanged(msg.isOpen, msg.title);
                 break;
             case 'participants_changed':
@@ -674,7 +677,9 @@ class ParticipantPage extends LiveBallot {
                 this.participantAction(action, id, name);
                 return;
             }
-            this.showParticipantRankings({ id, name });
+            if (!this.rankingsPrivate) {
+                this.showParticipantRankings({ id, name });
+            }
         });
     }
 
@@ -755,6 +760,9 @@ class ParticipantPage extends LiveBallot {
     protected stateChanged(isOpen: boolean, title: string): void {
         updateToggleUI(isOpen);
         updateTitle(title);
+        if (this.rankingsPrivate && this.viewing) {
+            this.restoreParticipantList();
+        }
     }
 
     // --- Creator controls ---
@@ -765,6 +773,14 @@ class ParticipantPage extends LiveBallot {
             const title = prompt('Ballot title', current === 'Ballot' ? '' : current);
             if (title === null) return;
             this.creatorPost('title', new URLSearchParams({ title }));
+        });
+
+        byId('visibility-btn', HTMLButtonElement)?.addEventListener('click', () => {
+            const makePrivate = !this.rankingsPrivate;
+            if (makePrivate && !confirm('Make rankings private? Once anyone else ranks, they can\'t be made visible again.')) {
+                return;
+            }
+            this.creatorPost('visibility', new URLSearchParams({ private: makePrivate ? '1' : '0' }));
         });
 
         byId('delete-ballot-btn', HTMLButtonElement)?.addEventListener('click', () => {
@@ -891,6 +907,19 @@ function updateToggleUI(isOpen: boolean): void {
         el.textContent = isOpen ? 'Open' : 'Closed';
         el.classList.toggle('toggle-open', isOpen);
         el.classList.toggle('toggle-closed', !isOpen);
+    }
+}
+
+function updateVisibilityUI(rankingsPrivate: boolean): void {
+    const note = byId('visibility-note', HTMLElement);
+    if (note) {
+        note.textContent = rankingsPrivate
+            ? 'Rankings are private; only the combined results are shown.'
+            : 'Rankings are visible to all participants.';
+    }
+    const button = byId('visibility-btn', HTMLButtonElement);
+    if (button) {
+        button.textContent = rankingsPrivate ? 'Make rankings visible' : 'Make rankings private';
     }
 }
 

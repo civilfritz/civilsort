@@ -37,6 +37,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /ballot/{id}/rankings", h.HandleSaveRankings)
 	mux.HandleFunc("POST /ballot/{id}/toggle", h.HandleToggleOpen)
 	mux.HandleFunc("POST /ballot/{id}/title", h.HandleSetTitle)
+	mux.HandleFunc("POST /ballot/{id}/visibility", h.HandleSetVisibility)
 	mux.HandleFunc("POST /ballot/{id}/delete", h.HandleDeleteBallot)
 	mux.HandleFunc("GET /ballot/{id}/participants/{participantID}/link", h.HandleParticipantLink)
 	mux.HandleFunc("POST /ballot/{id}/participants/{participantID}/reset", h.HandleResetParticipant)

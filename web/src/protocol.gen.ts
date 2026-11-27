@@ -72,6 +72,7 @@ export interface StateChangedMessage {
   type: "state_changed";
   isOpen: boolean;
   title: string;
+  rankingsPrivate: boolean;
 }
 /**
  * BallotDeletedMessage is sent when the creator deletes the ballot.

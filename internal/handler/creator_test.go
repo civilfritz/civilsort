@@ -25,12 +25,13 @@ func TestCreatorOnlyActions(t *testing.T) {
 		method string
 		path   map[string]string
 	}{
-		"toggle": {h.HandleToggleOpen, "POST", path},
-		"title":  {h.HandleSetTitle, "POST", path},
-		"delete": {h.HandleDeleteBallot, "POST", path},
-		"link":   {h.HandleParticipantLink, "GET", targetPath},
-		"reset":  {h.HandleResetParticipant, "POST", targetPath},
-		"remove": {h.HandleRemoveParticipant, "POST", targetPath},
+		"toggle":     {h.HandleToggleOpen, "POST", path},
+		"title":      {h.HandleSetTitle, "POST", path},
+		"visibility": {h.HandleSetVisibility, "POST", path},
+		"delete":     {h.HandleDeleteBallot, "POST", path},
+		"link":       {h.HandleParticipantLink, "GET", targetPath},
+		"reset":      {h.HandleResetParticipant, "POST", targetPath},
+		"remove":     {h.HandleRemoveParticipant, "POST", targetPath},
 	}
 	for name, a := range actions {
 		t.Run(name, func(t *testing.T) {
@@ -247,5 +248,62 @@ func TestHandleDeleteBallot(t *testing.T) {
 	}
 	if rec := do(t, h.HandleBallot, "GET", req{path: map[string]string{"id": ballotID}}); rec.Code != http.StatusNotFound {
 		t.Errorf("deleted ballot: got %d, want 404", rec.Code)
+	}
+}
+
+func TestRankingsVisibility(t *testing.T) {
+	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
+	member := join(t, h, ballotID)
+	item := insertItem(t, h.db, ballotID, "Item", creator.ID)
+	path := map[string]string{"id": ballotID}
+
+	setVisibility := func(private string) int {
+		return do(t, h.HandleSetVisibility, "POST", req{as: &creator, path: path, form: url.Values{"private": {private}}}).Code
+	}
+	rank := func(p participant) {
+		if _, err := h.db.Exec("INSERT INTO rankings (ballot_id, participant_id, item_id, position) VALUES (?, ?, ?, 1)",
+			ballotID, p.ID, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view := func(as, target participant) int {
+		return do(t, h.HandleGetRankings, "GET", req{as: &as, path: map[string]string{"id": ballotID, "participantID": target.ID}}).Code
+	}
+
+	if code := view(member, creator); code != http.StatusOK {
+		t.Errorf("visible rankings: got %d, want 200", code)
+	}
+
+	if code := setVisibility("1"); code != http.StatusNoContent {
+		t.Fatalf("make private: got %d, want 204", code)
+	}
+	if code := view(member, creator); code != http.StatusForbidden {
+		t.Errorf("private, someone else's: got %d, want 403", code)
+	}
+	if code := view(creator, member); code != http.StatusForbidden {
+		t.Errorf("private, creator viewing a participant: got %d, want 403", code)
+	}
+	if code := view(member, member); code != http.StatusOK {
+		t.Errorf("private, own rankings: got %d, want 200", code)
+	}
+
+	// Only the creator has ranked: still free to switch back.
+	rank(creator)
+	if code := setVisibility("0"); code != http.StatusNoContent {
+		t.Errorf("visible again with only creator rankings: got %d, want 204", code)
+	}
+	if code := setVisibility("1"); code != http.StatusNoContent {
+		t.Fatalf("make private again: got %d, want 204", code)
+	}
+
+	// Once someone else ranks while private, it stays private.
+	rank(member)
+	if code := setVisibility("0"); code != http.StatusConflict {
+		t.Errorf("visible after others ranked privately: got %d, want 409", code)
+	}
+	var private bool
+	if err := h.db.QueryRow("SELECT rankings_private FROM ballots WHERE id = ?", ballotID).Scan(&private); err != nil || !private {
+		t.Errorf("rankings_private = %v (%v), want true", private, err)
 	}
 }

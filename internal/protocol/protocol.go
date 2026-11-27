@@ -65,9 +65,10 @@ type ItemsChangedMessage struct {
 
 // StateChangedMessage is sent when the creator changes ballot settings.
 type StateChangedMessage struct {
-	Type   MessageType `json:"type" tstype:"\"state_changed\""`
-	IsOpen bool        `json:"isOpen"`
-	Title  string      `json:"title"`
+	Type            MessageType `json:"type" tstype:"\"state_changed\""`
+	IsOpen          bool        `json:"isOpen"`
+	Title           string      `json:"title"`
+	RankingsPrivate bool        `json:"rankingsPrivate"`
 }
 
 // BallotDeletedMessage is sent when the creator deletes the ballot.
@@ -123,8 +124,8 @@ func NewItemsChangedMessage(results []ResultEntry, items []ItemEntry, participan
 	}
 }
 
-func NewStateChangedMessage(isOpen bool, title string) StateChangedMessage {
-	return StateChangedMessage{Type: TypeStateChanged, IsOpen: isOpen, Title: title}
+func NewStateChangedMessage(isOpen bool, title string, rankingsPrivate bool) StateChangedMessage {
+	return StateChangedMessage{Type: TypeStateChanged, IsOpen: isOpen, Title: title, RankingsPrivate: rankingsPrivate}
 }
 
 func NewBallotDeletedMessage() BallotDeletedMessage {

@@ -17,7 +17,7 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-role="{{.Role}}" data-current-participant-id="{{.CurrentParticipantID}}">
+<main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-role="{{.Role}}" data-current-participant-id="{{.CurrentParticipantID}}" data-rankings-private="{{.RankingsPrivate}}">
 <div class="container ballot">
     <div class="ballot-header">
         {{if eq .Role "creator"}}
@@ -40,6 +40,7 @@
                     {{end}}
                     {{if eq .Role "creator"}}
                     <button class="menu-item" id="edit-title-btn">Edit title</button>
+                    <button class="menu-item" id="visibility-btn">{{if .RankingsPrivate}}Make rankings visible{{else}}Make rankings private{{end}}</button>
                     <button class="menu-item menu-item-danger" id="delete-ballot-btn">Delete ballot</button>
                     {{end}}
                     <button class="menu-item theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">Light/Dark</button>
@@ -80,13 +81,14 @@
         <ul class="participant-list" id="participant-list" style="display:none;">
             {{range .Participants}}
                 {{if .DisplayName}}
-                    <li class="participant-name" data-participant-id="{{.ID}}" data-name="{{.DisplayName}}">{{.DisplayName}}</li>
+                    <li class="participant-name" data-participant-id="{{.ID}}" data-name="{{.DisplayName}}"><span class="participant-label">{{.DisplayName}}</span></li>
                 {{end}}
             {{end}}
             {{if gt .AnonymousCount 0}}
                 <li class="anonymous-label">{{if eq .AnonymousCount 1}}1 anonymous{{else}}{{.AnonymousCount}} anonymous{{end}}</li>
             {{end}}
         </ul>
+        <p class="help-text" id="visibility-note">{{if .RankingsPrivate}}Rankings are private; only the combined results are shown.{{else}}Rankings are visible to all participants.{{end}}</p>
     </div>
 
     <div class="tabs" role="tablist">

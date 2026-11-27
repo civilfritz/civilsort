@@ -46,8 +46,7 @@ func (h *Handler) targetParticipant(w http.ResponseWriter, r *http.Request, ball
 // HandleSetTitle renames the ballot.
 func (h *Handler) HandleSetTitle(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
-	ballot, _, ok := h.requireCreator(w, r, ballotID)
-	if !ok {
+	if _, _, ok := h.requireCreator(w, r, ballotID); !ok {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -61,7 +60,51 @@ func (h *Handler) HandleSetTitle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	h.broadcastStateChange(ballotID, ballot.IsOpen, title)
+	h.broadcastState(r.Context(), ballotID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleSetVisibility makes rankings private (form private=1) or visible
+// (private=0). Private rankings can't be made visible again once someone
+// other than the creator has ranked, since they ranked expecting privacy.
+func (h *Handler) HandleSetVisibility(w http.ResponseWriter, r *http.Request) {
+	ballotID := r.PathValue("id")
+	ballot, _, ok := h.requireCreator(w, r, ballotID)
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+	private := r.FormValue("private") == "1"
+
+	if ballot.RankingsPrivate && !private {
+		var othersRanked bool
+		err := h.db.QueryRowContext(r.Context(),
+			`SELECT EXISTS(
+			   SELECT 1 FROM rankings r
+			   JOIN participants p ON p.ballot_id = r.ballot_id AND p.id = r.participant_id
+			   WHERE r.ballot_id = ? AND NOT p.is_creator)`,
+			ballotID).Scan(&othersRanked)
+		if err != nil {
+			log.Printf("Error checking rankings: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if othersRanked {
+			http.Error(w, "Participants have already ranked expecting privacy, so rankings must stay private.", http.StatusConflict)
+			return
+		}
+	}
+
+	if _, err := h.db.ExecContext(r.Context(),
+		"UPDATE ballots SET rankings_private = ? WHERE id = ?", private, ballotID); err != nil {
+		log.Printf("Error setting visibility: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	h.broadcastState(r.Context(), ballotID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
