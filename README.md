@@ -4,11 +4,12 @@ A web application for ranked-choice voting with real-time results. Uses the Schu
 
 ## Features
 
-- **No login required** - Users are identified by secure browser cookies
-- **Unique ballot URLs** - Each ballot gets a shareable URL
-- **Ballot access control** - Open/Closed toggle to control new participant access; authorized participants can always re-join
-- **Copy URL to clipboard** - One-click copy button next to the share URL
-- **Collaborative item management** - Any participant can add items; users can delete items they added
+- **No login required** - Each ballot remembers its participants with a cookie scoped to that ballot
+- **Unique ballot URLs** - Anyone with a ballot's URL can watch it live; joining takes a name
+- **Creator controls** - The creator opens or closes the ballot to new participants, edits the title, recovers or resets participants' links, removes participants, and can delete the ballot
+- **Private rankings** - The creator can hide individual rankings so only combined results are shown
+- **Use on another device** - Each participant can copy a personal link that signs another browser in as them
+- **Collaborative item management** - Any participant can add items and delete their own until someone else ranks them
 - **Delete confirmation** - Prompts "Are you sure?" before deleting items
 - **Drag-and-drop ranking** - Intuitive interface using SortableJS
 - **Real-time results** - Results update live across all connected browsers via WebSockets
@@ -52,7 +53,7 @@ civilfritz-voting/
 │   ├── db/                       # SQLite database layer
 │   ├── model/                    # Domain types (Ballot, Item, Ranking)
 │   ├── schulze/                  # Pure Schulze algorithm with tests
-│   ├── handler/                  # HTTP handlers and middleware
+│   ├── handler/                  # HTTP handlers, identity, and roles
 │   ├── hub/                      # WebSocket broadcast hub
 │   └── protocol/                 # JSON message types shared with the frontend
 ├── templates/
@@ -60,7 +61,6 @@ civilfritz-voting/
 │   ├── ballot.html               # Main ballot interface
 │   ├── about.html                # About page with usage help
 │   ├── stats.html                # Aggregate statistics
-│   └── closed.html               # "Ballot is closed" error page
 ├── web/src/                      # TypeScript sources (bundled to static/app.js)
 ├── static/                       # CSS and built JavaScript
 └── civilsort.db                  # SQLite database (created at runtime)
@@ -69,23 +69,37 @@ civilfritz-voting/
 ## How It Works
 
 ### User Flow
-1. Visit the homepage to create a new ballot (optionally with a title)
-2. Share the unique ballot URL with participants (click the 📋 button to copy)
-3. Control access with the **Open/Closed** toggle:
-   - **Open**: New visitors can join and become participants
-   - **Closed**: Only existing participants can access the ballot
-   - The share URL and copy button are hidden when the ballot is closed
-4. Each participant can:
-   - Add items to the ballot
-   - Remove items they added (with confirmation prompt)
-   - Rank all items via drag-and-drop
-5. The Results tab shows the live Schulze ranking, updated in real-time
-6. Toggle between light/dark mode with the theme button (top-right)
+1. Create a ballot from the homepage with your name and an optional title. You're its creator.
+2. Share the ballot's URL with **Copy Link** or **Share** in the menu (☰).
+3. Anyone with the URL sees the ballot as a **viewer**: items, live results, and who's participating. While the ballot is **Open**, viewers can **Join** by entering a name.
+4. **Participants** add items, drag them into the Ranked zone, and rename themselves. They can delete items they added until someone else ranks them.
+5. The Results tab shows the live Schulze ranking.
 
-### Cookie-Based Authentication
-- First visit generates a UUID v4 stored in an HttpOnly, SameSite=Lax cookie
-- Users can "reset" by clearing cookies to get a new identity
-- No passwords or email required - perfect for casual voting
+### Roles
+| | Viewer | Participant | Creator |
+|---|---|---|---|
+| See items, results, participant list | ✓ | ✓ | ✓ |
+| Join (while open) | ✓ | | |
+| Add items, rank, rename self | | ✓ | ✓ |
+| View others' rankings (unless private) | | ✓ | ✓ |
+| Delete items | | own, until someone else ranks them | any |
+| Open/close, edit title, make rankings private | | | ✓ |
+| Copy, reset, or remove participants; delete ballot | | | ✓ |
+
+Closing a ballot stops new people joining; it stays viewable. Making rankings
+private can't be undone once anyone other than the creator has ranked.
+
+### Identity
+- There are no accounts. Joining a ballot creates a participant with a secret,
+  stored in an HttpOnly, SameSite=Lax cookie scoped to `/ballot/{id}`, so each
+  ballot only sees its own cookie.
+- **Use on another device** copies a `/ballot/{id}/join/{secret}` link that signs
+  another browser in as you. The creator can copy or reset anyone's link, for
+  someone who lost theirs or whose link leaked.
+- Browsers from before per-ballot identity (with a `voter_id` cookie) are
+  recognized on ballots they had joined.
+- Cross-origin POSTs are rejected, and cookies are `Secure` over HTTPS
+  (including behind a proxy that sets `X-Forwarded-Proto`).
 
 ### Schulze Algorithm
 The [Schulze method](https://en.wikipedia.org/wiki/Schulze_method) is a Condorcet completion method:
@@ -110,7 +124,7 @@ The [Schulze method](https://en.wikipedia.org/wiki/Schulze_method) is a Condorce
 ## Testing
 
 ### Manual Testing
-1. Open the ballot in **multiple browser windows** (or different browsers)
+1. Open the ballot in **different browsers or private windows** (windows of one browser share its cookies) and join each with a different name
 2. Add items and rank them differently in each window
 3. Switch to the Results tab - you'll see the combined ranking update in real-time
 
@@ -131,8 +145,8 @@ fails if the generated file is stale.
 
 Test coverage includes:
 - **Schulze algorithm**: Basic elections, Condorcet winners, cycle resolution (A>B, B>C, C>A), incomplete rankings, ties and edge cases
-- **HTTP handlers**: Ballot creation, item management, ranking saves, authorization checks
-- **Database layer**: Schema validation, WAL mode, foreign keys
+- **HTTP handlers**: Ballot creation, viewing and joining, per-ballot cookies and join links, creator-only actions, rankings visibility, item and ranking validation
+- **Database layer**: Schema, WAL mode, foreign keys on every connection, migration from earlier schemas
 - **WebSocket hub**: Hub manager lifecycle and broadcast safety
 - **CLI commands**: List ballots, items, and participants with error handling
 
@@ -233,49 +247,16 @@ Caddy automatically handles:
 
 ## Database Schema
 
-```sql
-CREATE TABLE users (
-    id           TEXT PRIMARY KEY,   -- UUID v4 from cookie
-    display_name TEXT NOT NULL DEFAULT '',
-    created_at   DATETIME DEFAULT (datetime('now'))
-);
+The schema is defined in [`internal/db/db.go`](internal/db/db.go) and versioned
+with `PRAGMA user_version`; older databases are migrated on startup. In brief:
 
-CREATE TABLE ballots (
-    id         TEXT PRIMARY KEY,   -- 8-char base62 (URL-friendly)
-    title      TEXT DEFAULT '',
-    is_open    INTEGER NOT NULL DEFAULT 1,  -- 1 = open, 0 = closed
-    created_by TEXT REFERENCES users(id),
-    created_at DATETIME DEFAULT (datetime('now'))
-);
-
-CREATE TABLE ballot_participants (
-    ballot_id      TEXT REFERENCES ballots(id) ON DELETE CASCADE,
-    user_id        TEXT REFERENCES users(id),
-    participant_id TEXT NOT NULL DEFAULT '',
-    display_name   TEXT NOT NULL DEFAULT '',
-    created_at     DATETIME DEFAULT (datetime('now')),
-    PRIMARY KEY (ballot_id, user_id)
-);
-
-CREATE UNIQUE INDEX idx_bp_participant ON ballot_participants(ballot_id, participant_id);
-
-CREATE TABLE items (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    ballot_id  TEXT REFERENCES ballots(id) ON DELETE CASCADE,
-    name       TEXT NOT NULL,
-    added_by   TEXT REFERENCES users(id),
-    created_at DATETIME DEFAULT (datetime('now')),
-    UNIQUE(ballot_id, name)
-);
-
-CREATE TABLE rankings (
-    ballot_id TEXT    REFERENCES ballots(id) ON DELETE CASCADE,
-    user_id   TEXT    REFERENCES users(id),
-    item_id   INTEGER REFERENCES items(id) ON DELETE CASCADE,
-    position  INTEGER NOT NULL,  -- 1 = most preferred
-    PRIMARY KEY (ballot_id, user_id, item_id)
-);
-```
+- `ballots`: title, whether it's open to new participants, and whether
+  rankings are private.
+- `participants`: one row per person per ballot, keyed by `(ballot_id, id)`.
+  `id` is shown to others; `secret` is the credential in their cookie and join
+  link. `is_creator` marks the admin, and removed participants keep their row
+  with `removed_at` set and no secret.
+- `items` and `rankings` reference participants by ID.
 
 ## Example Use Cases
 
