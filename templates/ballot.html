@@ -21,7 +21,8 @@
 <div class="container ballot">
     <div class="ballot-header">
         <span id="ballot-status" class="status-pill {{if .Ballot.IsOpen}}status-open{{else}}status-closed{{end}}" title="Whether new participants can join">{{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}</span>
-        <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
+        <h1><span id="ballot-title" data-title="{{.Ballot.Title}}">{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</span>
+            {{- if eq .Role "creator"}}<button type="button" id="edit-title-btn" class="edit-title-btn" aria-label="Edit title" title="Edit title"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>{{end}}</h1>
         <div class="menu-wrapper" id="menu-wrapper">
             <button class="hamburger-menu" id="hamburger-menu" aria-label="Menu">☰</button>
             <div class="menu-dropdown" id="menu-dropdown">
@@ -33,7 +34,6 @@
                     {{end}}
                     {{if eq .Role "creator"}}
                     <button class="menu-item" id="toggle-open-btn">{{if .Ballot.IsOpen}}Close to new participants{{else}}Reopen to new participants{{end}}</button>
-                    <button class="menu-item" id="edit-title-btn">Edit title</button>
                     <button class="menu-item" id="visibility-btn">{{if .RankingsPrivate}}Make rankings visible{{else}}Make rankings private{{end}}</button>
                     <button class="menu-item menu-item-danger" id="delete-ballot-btn">Delete ballot</button>
                     {{end}}

@@ -302,7 +302,7 @@ abstract class LiveBallot {
         }
 
         shareUrlBtn.addEventListener('click', async () => {
-            const ballotTitle = document.querySelector('.ballot-header h1')?.textContent || 'Ballot';
+            const ballotTitle = byId('ballot-title', HTMLElement)?.textContent || 'Ballot';
             try {
                 await navigator.share({
                     title: ballotTitle,
@@ -782,13 +782,58 @@ class ParticipantPage extends LiveBallot {
 
     // --- Creator controls ---
 
-    private initCreatorMenu(): void {
-        byId('edit-title-btn', HTMLButtonElement)?.addEventListener('click', () => {
-            const current = document.querySelector('.ballot-header h1')?.textContent ?? '';
-            const title = prompt('Ballot title', current === 'Ballot' ? '' : current);
-            if (title === null) return;
-            this.creatorPost('title', new URLSearchParams({ title }));
+    // Replaces the title with an input while the pencil is used. Enter or
+    // leaving the field saves; Escape cancels.
+    private initTitleEdit(): void {
+        const button = byId('edit-title-btn', HTMLButtonElement);
+        const span = byId('ballot-title', HTMLElement);
+        if (!button || !span) return;
+
+        button.addEventListener('click', () => {
+            const original = span.dataset['title'] ?? '';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'title-input';
+            input.maxLength = 200;
+            input.placeholder = 'Ballot';
+            input.setAttribute('aria-label', 'Ballot title');
+            input.value = original;
+
+            let done = false;
+            const finish = (save: boolean): void => {
+                if (done) return;
+                done = true;
+                const title = input.value.trim();
+                input.remove();
+                span.hidden = false;
+                button.hidden = false;
+                button.focus();
+                if (save && title !== original) {
+                    updateTitle(title);
+                    this.creatorPost('title', new URLSearchParams({ title }));
+                }
+            };
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    finish(true);
+                } else if (e.key === 'Escape') {
+                    finish(false);
+                }
+            });
+            input.addEventListener('blur', () => finish(true));
+
+            span.hidden = true;
+            button.hidden = true;
+            span.after(input);
+            input.focus();
+            input.select();
         });
+    }
+
+    private initCreatorMenu(): void {
+        this.initTitleEdit();
 
         byId('visibility-btn', HTMLButtonElement)?.addEventListener('click', () => {
             const makePrivate = !this.rankingsPrivate;
@@ -948,8 +993,11 @@ function isBallotOpen(): boolean {
 
 function updateTitle(title: string): void {
     const shown = title || 'Ballot';
-    const h1 = document.querySelector('.ballot-header h1');
-    if (h1) h1.textContent = shown;
+    const span = byId('ballot-title', HTMLElement);
+    if (span) {
+        span.textContent = shown;
+        span.dataset['title'] = title;
+    }
     document.title = `${shown} - civilsort`;
 }
 

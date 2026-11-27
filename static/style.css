@@ -179,6 +179,44 @@ h2 {
     margin: 0;
 }
 
+.edit-title-btn {
+    margin-left: 0.25em;
+    padding: 0.3em;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    opacity: 0.45;
+    cursor: pointer;
+    vertical-align: middle;
+    line-height: 0;
+    font-size: inherit;
+}
+
+.edit-title-btn svg {
+    width: 0.55em;
+    height: 0.55em;
+}
+
+.edit-title-btn:hover,
+.edit-title-btn:focus-visible {
+    opacity: 1;
+}
+
+.title-input {
+    width: 100%;
+    padding: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+
+.title-input:focus {
+    outline: none;
+    border-bottom-color: var(--primary);
+}
+
 /* Tabs */
 .tabs {
     display: flex;
