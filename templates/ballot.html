@@ -30,9 +30,9 @@
             <div class="menu-dropdown" id="menu-dropdown">
                 <nav class="menu-nav">
                     <a href="/" class="menu-item">New Ballot</a>
-                    <button class="menu-item" id="share-url-btn" data-keep-menu-open aria-label="Share ballot">Share</button>
+                    <button class="menu-item" id="share-btn" aria-label="Share this ballot with a QR code or link">Share</button>
                     {{if ne .Role "viewer"}}
-                    <button class="menu-item" id="device-link-btn" data-link="{{.JoinLink}}" aria-label="Copy your personal link for using this ballot on another device">Use on another device</button>
+                    <button class="menu-item" id="device-link-btn" data-link="{{.JoinLink}}" aria-label="Show your personal link for signing in on another device">Add device</button>
                     {{end}}
                     {{if eq .Role "creator"}}
                     <button class="menu-item" id="toggle-open-btn">{{if .Ballot.IsOpen}}Close to new participants{{else}}Reopen to new participants{{end}}</button>
@@ -141,8 +141,20 @@
         </ul>
     </div>
 </div>
+<dialog id="qr-dialog" class="app-dialog qr-dialog" aria-labelledby="qr-title">
+    <form method="dialog">
+        <h2 id="qr-title"></h2>
+        <div id="qr-code" class="qr-code"></div>
+        <a id="qr-url" class="qr-url" href=""></a>
+        <p id="qr-hint" class="qr-hint">Tap the link to copy it.</p>
+        <p id="qr-note" class="qr-note" hidden></p>
+        <div class="dialog-buttons">
+            <button value="close">Close</button>
+        </div>
+    </form>
+</dialog>
 {{if eq .Role "creator"}}
-<dialog id="remove-dialog" class="remove-dialog">
+<dialog id="remove-dialog" class="app-dialog remove-dialog">
     <form method="dialog">
         <p>Remove <strong id="remove-name"></strong> from this ballot? Their link will stop working.</p>
         <label><input type="checkbox" name="rankings" value="1"> Also delete their rankings</label>

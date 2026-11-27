@@ -8,7 +8,7 @@ A web application for ranked-choice voting with real-time results. Uses the Schu
 - **Unique ballot URLs** - Anyone with a ballot's URL can watch it live; joining takes a name
 - **Creator controls** - The creator opens or closes the ballot to new participants, edits the title, recovers or resets participants' links, removes participants, and can delete the ballot
 - **Private rankings** - The creator can hide individual rankings so only combined results are shown
-- **Use on another device** - Each participant can copy a personal link that signs another browser in as them
+- **Add device** - Each participant can show a personal link, as a QR code or a link to copy, that signs another browser in as them
 - **Collaborative item management** - Any participant can add items and delete their own until someone else ranks them
 - **Delete confirmation** - Prompts "Are you sure?" before deleting items
 - **Drag-and-drop ranking** - Intuitive interface using SortableJS
@@ -70,7 +70,7 @@ civilfritz-voting/
 
 ### User Flow
 1. Create a ballot from the homepage with your name and an optional title. You're its creator.
-2. Share the ballot's URL from the address bar or with **Share** in the menu (☰).
+2. Share the ballot's URL from the address bar, or with **Share** in the menu (☰), which shows it as a QR code for others to scan and as a link to copy.
 3. Anyone with the URL sees the ballot as a **viewer**: items, live results, and who's participating. While the ballot is **Open**, viewers can **Join** by entering a name.
 4. **Participants** add items, drag them into the Ranked zone (or tap **+** to add one to the bottom; **−** unranks it), and rename themselves. They can delete items they added until someone else ranks them.
 5. The Results tab shows the live Schulze ranking.
@@ -93,7 +93,7 @@ private can't be undone once anyone other than the creator has ranked.
 - There are no accounts. Joining a ballot creates a participant with a secret,
   stored in an HttpOnly, SameSite=Lax cookie scoped to `/ballot/{id}`, so each
   ballot only sees its own cookie.
-- **Use on another device** copies a `/ballot/{id}/join/{secret}` link that signs
+- **Add device** shows a `/ballot/{id}/join/{secret}` link, as a QR code or to copy, that signs
   another browser in as you. The creator can copy or reset anyone's link, for
   someone who lost theirs or whose link leaked.
 - Browsers from before per-ballot identity (with a `voter_id` cookie) are

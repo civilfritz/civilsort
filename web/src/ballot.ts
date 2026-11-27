@@ -1,3 +1,4 @@
+import qrcode from 'qrcode-generator';
 import Sortable from 'sortablejs';
 
 import type { ServerMessage } from './messages';
@@ -11,7 +12,7 @@ import type {
     ToggleResponse,
 } from './protocol.gen';
 import { CloseBallotDeleted, CloseNotParticipant } from './protocol.gen';
-import { assertNever, byId, errorMessage, escapeHtml, showError, showToast } from './ui';
+import { assertNever, byId, errorMessage, escapeHtml, showError } from './ui';
 
 const minReconnectDelay = 1000;
 const maxReconnectDelay = 30000;
@@ -198,6 +199,68 @@ abstract class LiveBallot {
         }
     }
 
+    // --- Sharing ---
+
+    // The Share dialog: a link as a QR code to scan, and as text to tap and
+    // copy. Share shows the public ballot URL; "Add device" shows
+    // the participant's private join link (see showQr).
+    private initShare(): void {
+        const ballotUrl = `${location.origin}/ballot/${this.ballotId}`;
+        byId('share-btn', HTMLButtonElement)?.addEventListener('click', () => {
+            this.showQr(ballotUrl, 'Scan to open this ballot');
+        });
+
+        const dialog = byId('qr-dialog', HTMLDialogElement);
+        const link = byId('qr-url', HTMLAnchorElement);
+        const hint = byId('qr-hint', HTMLElement);
+        if (!dialog || !link || !hint) return;
+
+        let hintTimeout: ReturnType<typeof setTimeout> | undefined;
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            clearTimeout(hintTimeout);
+            navigator.clipboard.writeText(link.href)
+                .then(() => { hint.textContent = '✓ Copied'; })
+                .catch(() => { hint.textContent = "Couldn't copy; press and hold the link instead."; });
+            hintTimeout = setTimeout(() => { hint.textContent = qrHint; }, 2000);
+        });
+
+        // Clicks on the backdrop target the dialog itself, as do clicks on its
+        // padding, so close only when the click is outside its box.
+        dialog.addEventListener('click', (e) => {
+            const r = dialog.getBoundingClientRect();
+            const outside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+            if (e.target === dialog && outside) dialog.close();
+        });
+    }
+
+    // Shows url in the Share dialog with its own heading, and an optional
+    // warning note.
+    protected showQr(url: string, title: string, note = ''): void {
+        const dialog = byId('qr-dialog', HTMLDialogElement);
+        const code = byId('qr-code', HTMLElement);
+        const link = byId('qr-url', HTMLAnchorElement);
+        const heading = byId('qr-title', HTMLElement);
+        const hint = byId('qr-hint', HTMLElement);
+        const noteEl = byId('qr-note', HTMLElement);
+        if (!dialog || !code || !link || !heading || !hint || !noteEl) return;
+
+        if (code.dataset['url'] !== url) {
+            const qr = qrcode(0, 'M');
+            qr.addData(url);
+            qr.make();
+            code.innerHTML = qr.createSvgTag({ scalable: true, margin: 4 });
+            code.dataset['url'] = url;
+        }
+        heading.textContent = title;
+        link.href = url;
+        link.textContent = url;
+        hint.textContent = qrHint;
+        noteEl.textContent = note;
+        noteEl.hidden = !note;
+        dialog.showModal();
+    }
+
     // --- Participant list ---
 
     private initParticipantList(): void {
@@ -303,36 +366,6 @@ abstract class LiveBallot {
 
     // Adds per-participant controls to a list entry.
     protected decorateParticipant(_li: HTMLLIElement, _p: ParticipantEntry): void {}
-
-    // --- Sharing ---
-
-    private initShare(): void {
-        const ballotUrl = `${location.origin}/ballot/${this.ballotId}`;
-        const shareUrlBtn = byId('share-url-btn', HTMLButtonElement);
-        if (!shareUrlBtn) return;
-
-        // Hide share button if the Web Share API isn't available
-        if (!('share' in navigator)) {
-            shareUrlBtn.style.display = 'none';
-            return;
-        }
-
-        shareUrlBtn.addEventListener('click', async () => {
-            const ballotTitle = byId('ballot-title', HTMLElement)?.textContent || 'Ballot';
-            try {
-                await navigator.share({
-                    title: ballotTitle,
-                    text: `Vote on: ${ballotTitle}`,
-                    url: ballotUrl,
-                });
-            } catch (err) {
-                // User cancelled or error occurred
-                if (!(err instanceof DOMException && err.name === 'AbortError')) {
-                    console.error('Failed to share:', err);
-                }
-            }
-        });
-    }
 }
 
 // ViewerPage is the ballot as seen by someone who hasn't joined: read-only
@@ -722,9 +755,8 @@ class ParticipantPage extends LiveBallot {
         const link = button?.dataset['link'];
         if (button && link) {
             button.addEventListener('click', () => {
-                navigator.clipboard.writeText(location.origin + link)
-                    .then(() => showToast('Link copied. Open it on your other device.', 'success'))
-                    .catch(() => showError('Failed to copy. Please try again.'));
+                this.showQr(location.origin + link, 'Scan to use this ballot on another device',
+                    "This link signs in as you. Don't share it with others.");
             });
         }
     }
@@ -1001,6 +1033,8 @@ class ParticipantPage extends LiveBallot {
 function itemId(li: HTMLElement): number {
     return parseInt(li.dataset['itemId'] ?? '', 10);
 }
+
+const qrHint = 'Tap the link to copy it.';
 
 // FLIP animation: capture where elements are, change the DOM, then let
 // animateFrom glide each one from its old position to its new one.

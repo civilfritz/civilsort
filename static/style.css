@@ -766,10 +766,6 @@ h2 {
     background: var(--danger);
 }
 
-.toast-success {
-    background: var(--success);
-}
-
 .toast.fade-out {
     animation: fadeOut 0.3s ease;
 }
@@ -947,12 +943,59 @@ input:focus-visible,
     color: var(--danger);
 }
 
-.remove-dialog {
-    max-width: 360px;
+/* The global reset removes the margin: auto that centers modal dialogs. */
+.app-dialog {
+    margin: auto;
+    padding: 20px;
+    max-width: min(360px, calc(100vw - 32px));
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg-surface);
     color: var(--text);
+}
+
+.qr-dialog h2 {
+    margin: 0 0 12px;
+    font-size: 18px;
+    text-align: center;
+}
+
+.qr-code {
+    width: min(70vw, 280px);
+    aspect-ratio: 1;
+    margin: 0 auto;
+    background: white;
+    border-radius: 4px;
+}
+
+.qr-code svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.qr-url {
+    display: block;
+    margin: 10px 0 0;
+    font-size: 13px;
+    color: var(--primary);
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.qr-hint,
+.qr-note {
+    margin: 4px 0 0;
+    font-size: 12px;
+    text-align: center;
+}
+
+.qr-hint {
+    color: var(--text-muted);
+}
+
+.qr-note {
+    color: var(--danger);
 }
 
 .remove-dialog label {

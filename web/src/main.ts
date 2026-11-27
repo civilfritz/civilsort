@@ -35,10 +35,8 @@ function initMenu(): void {
     });
 
     // Close menu once an item is chosen; the item's own handler runs first.
-    // Share keeps it open, since the system share sheet is anchored to it.
     menuDropdown.addEventListener('click', (e) => {
-        const item = (e.target as Element | null)?.closest('.menu-item');
-        if (item && !item.hasAttribute('data-keep-menu-open')) {
+        if ((e.target as Element | null)?.closest('.menu-item')) {
             menuDropdown.classList.remove('open');
         }
     });
