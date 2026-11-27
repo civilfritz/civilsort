@@ -4,16 +4,72 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"strings"
 
-	"github.com/civilfritz/civilsort/internal/util"
 	_ "modernc.org/sqlite"
 )
 
 // busyTimeoutMS is how long a write waits for a lock before failing.
 const busyTimeoutMS = 5000
 
-// Open opens the SQLite database and applies pragmas.
+// schemaVersion is stored in PRAGMA user_version.
+const schemaVersion = 2
+
+// schema is the current database schema, used for new databases and as the
+// target of migrateV1ToV2.
+//
+// A participant belongs to one ballot and is identified by (ballot_id, id).
+// The id is safe to show to others; secret is the credential held in the
+// participant's cookie and join link. Removed participants keep their row
+// (so their kept items and rankings still reference it) with secret NULL.
+const schema = `
+CREATE TABLE ballots (
+	id               TEXT PRIMARY KEY,
+	title            TEXT NOT NULL DEFAULT '',
+	is_open          INTEGER NOT NULL DEFAULT 1,
+	rankings_private INTEGER NOT NULL DEFAULT 0,
+	created_at       DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE participants (
+	ballot_id      TEXT NOT NULL REFERENCES ballots(id) ON DELETE CASCADE,
+	id             TEXT NOT NULL,
+	secret         TEXT,
+	display_name   TEXT NOT NULL DEFAULT '',
+	is_creator     INTEGER NOT NULL DEFAULT 0,
+	removed_at     DATETIME,
+	legacy_user_id TEXT,
+	created_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+	PRIMARY KEY (ballot_id, id),
+	UNIQUE (ballot_id, secret)
+);
+
+CREATE UNIQUE INDEX idx_participants_legacy_user
+	ON participants(ballot_id, legacy_user_id) WHERE legacy_user_id IS NOT NULL;
+
+CREATE TABLE items (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	ballot_id  TEXT NOT NULL REFERENCES ballots(id) ON DELETE CASCADE,
+	name       TEXT NOT NULL,
+	added_by   TEXT NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+	UNIQUE (ballot_id, name),
+	FOREIGN KEY (ballot_id, added_by) REFERENCES participants(ballot_id, id)
+);
+
+CREATE TABLE rankings (
+	ballot_id      TEXT    NOT NULL REFERENCES ballots(id) ON DELETE CASCADE,
+	participant_id TEXT    NOT NULL,
+	item_id        INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+	position       INTEGER NOT NULL,
+	PRIMARY KEY (ballot_id, participant_id, item_id),
+	FOREIGN KEY (ballot_id, participant_id) REFERENCES participants(ballot_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_rankings_item ON rankings(item_id);
+`
+
+// Open opens the SQLite database, applies pragmas, and migrates it to the
+// current schema.
 func Open(path string) (*sql.DB, error) {
 	// Pragmas go in the DSN so the driver applies them to every pooled
 	// connection; foreign_keys and busy_timeout are per-connection settings.
@@ -33,144 +89,44 @@ func Open(path string) (*sql.DB, error) {
 		db.SetMaxOpenConns(1)
 	}
 
-	// Run migrations
 	if err := migrate(db); err != nil {
 		db.Close()
-		return nil, err
+		return nil, fmt.Errorf("migrating database: %w", err)
 	}
 
 	return db, nil
 }
 
-// migrate creates all tables if they don't exist.
+// migrate brings the database to schemaVersion.
 func migrate(db *sql.DB) error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS users (
-		id         TEXT PRIMARY KEY,
-		created_at DATETIME NOT NULL DEFAULT (datetime('now'))
-	);
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		return err
+	}
+	if version >= schemaVersion {
+		return nil
+	}
 
-	CREATE TABLE IF NOT EXISTS ballots (
-		id         TEXT PRIMARY KEY,
-		title      TEXT NOT NULL DEFAULT '',
-		is_open    INTEGER NOT NULL DEFAULT 1,
-		created_by TEXT NOT NULL REFERENCES users(id),
-		created_at DATETIME NOT NULL DEFAULT (datetime('now'))
-	);
-
-	CREATE TABLE IF NOT EXISTS items (
-		id         INTEGER PRIMARY KEY AUTOINCREMENT,
-		ballot_id  TEXT NOT NULL REFERENCES ballots(id) ON DELETE CASCADE,
-		name       TEXT NOT NULL,
-		added_by   TEXT NOT NULL REFERENCES users(id),
-		created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-		UNIQUE(ballot_id, name)
-	);
-
-	CREATE TABLE IF NOT EXISTS rankings (
-		ballot_id TEXT    NOT NULL REFERENCES ballots(id) ON DELETE CASCADE,
-		user_id   TEXT    NOT NULL REFERENCES users(id),
-		item_id   INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-		position  INTEGER NOT NULL,
-		PRIMARY KEY (ballot_id, user_id, item_id)
-	);
-	`
-
-	_, err := db.Exec(schema)
-	if err != nil {
+	var hasBallots bool
+	if err := db.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ballots')",
+	).Scan(&hasBallots); err != nil {
 		return err
 	}
 
-	// Additive migrations for existing databases
-	migrations := []string{
-		`ALTER TABLE ballots ADD COLUMN is_open INTEGER NOT NULL DEFAULT 1`,
-		`CREATE TABLE IF NOT EXISTS ballot_participants (
-			ballot_id  TEXT NOT NULL REFERENCES ballots(id) ON DELETE CASCADE,
-			user_id    TEXT NOT NULL REFERENCES users(id),
-			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-			PRIMARY KEY (ballot_id, user_id)
-		)`,
-		`ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE ballot_participants ADD COLUMN participant_id TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE ballot_participants ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE ballot_participants ADD COLUMN public_id TEXT NOT NULL DEFAULT ''`,
-	}
-
-	for _, m := range migrations {
-		_, err := db.Exec(m)
-		// Ignore "duplicate column" or "table already exists" errors
-		if err != nil && !strings.Contains(err.Error(), "duplicate column") &&
-			!strings.Contains(err.Error(), "already exists") {
+	if !hasBallots {
+		if _, err := db.Exec(schema); err != nil {
 			return err
 		}
-	}
-
-	// Backfill IDs for existing rows BEFORE creating the unique indexes.
-	// participant_id is the participant's private re-join link; public_id is
-	// what other participants see.
-	for _, column := range []string{"participant_id", "public_id"} {
-		if err := backfillIDs(db, column); err != nil {
-			return err
-		}
-	}
-
-	indexes := []string{
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_bp_participant ON ballot_participants(ballot_id, participant_id) WHERE participant_id != ''`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_bp_public ON ballot_participants(ballot_id, public_id) WHERE public_id != ''`,
-	}
-	for _, idx := range indexes {
-		if _, err := db.Exec(idx); err != nil {
-			return err
-		}
-	}
-
-	// Remove rankings orphaned while foreign keys were only enabled on one
-	// pooled connection.
-	if _, err := db.Exec(`DELETE FROM rankings WHERE item_id NOT IN (SELECT id FROM items)`); err != nil {
+		_, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
 		return err
 	}
 
-	return nil
-}
-
-// backfillIDs generates random IDs for ballot_participants rows where column
-// is empty. column must be a trusted identifier.
-func backfillIDs(db *sql.DB, column string) error {
-	rows, err := db.Query(`SELECT ballot_id, user_id FROM ballot_participants WHERE ` + column + ` = ''`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	type participant struct {
-		ballotID string
-		userID   string
-	}
-
-	var participants []participant
-	for rows.Next() {
-		var p participant
-		if err := rows.Scan(&p.ballotID, &p.userID); err != nil {
-			return err
-		}
-		participants = append(participants, p)
-	}
-
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	stmt, err := db.Prepare(`UPDATE ballot_participants SET ` + column + ` = ? WHERE ballot_id = ? AND user_id = ?`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	for _, p := range participants {
-		if _, err := stmt.Exec(util.GenerateShortID(), p.ballotID, p.userID); err != nil {
-			return err
+	// Databases from before versioning are at version 0.
+	if version < 1 {
+		if err := migrateLegacy(db); err != nil {
+			return fmt.Errorf("legacy migrations: %w", err)
 		}
 	}
-
-	return nil
+	return migrateV1ToV2(db)
 }

@@ -23,17 +23,19 @@ type ballotRow struct {
 
 // resultEntry represents one item in the final ranking with its creator.
 type resultEntry struct {
-	Rank            int
-	Name            string
-	AddedByName     string
-	AddedByParticID string
+	Rank        int
+	Name        string
+	AddedByName string
+	AddedBy     string // participant ID
 }
 
 // participantRow represents a participant with all identifiers.
 type participantRow struct {
-	UserID        string
-	ParticipantID string
-	DisplayName   string
+	ID          string
+	Secret      string // empty once removed
+	DisplayName string
+	IsCreator   bool
+	Removed     bool
 }
 
 // ListBallots prints all ballots with participant and item counts.
@@ -41,7 +43,7 @@ func ListBallots(db *sql.DB) error {
 	ctx := context.Background()
 	rows, err := db.QueryContext(ctx, `
 		SELECT b.id, b.created_at, b.title,
-			(SELECT COUNT(*) FROM ballot_participants bp WHERE bp.ballot_id = b.id),
+			(SELECT COUNT(*) FROM participants p WHERE p.ballot_id = b.id AND p.removed_at IS NULL),
 			(SELECT COUNT(*) FROM items i WHERE i.ballot_id = b.id)
 		FROM ballots b
 		ORDER BY b.created_at DESC
@@ -120,7 +122,7 @@ func printItemsTable(results []resultEntry) error {
 		addedBy := r.AddedByName
 		if addedBy == "" {
 			// Show participant ID for anonymous users
-			addedBy = fmt.Sprintf("(anonymous: %s)", r.AddedByParticID)
+			addedBy = fmt.Sprintf("(anonymous: %s)", r.AddedBy)
 		}
 		fmt.Fprintf(w, "%d\t%s\t%s\n", r.Rank, r.Name, addedBy)
 	}
@@ -148,14 +150,21 @@ func ListParticipants(db *sql.DB, ballotID string) error {
 
 func printParticipantsTable(participants []participantRow) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "USER ID\tPARTICIPANT ID\tDISPLAY NAME")
+	fmt.Fprintln(w, "PARTICIPANT ID\tSECRET\tDISPLAY NAME\tROLE")
 
 	for _, p := range participants {
 		displayName := p.DisplayName
 		if displayName == "" {
 			displayName = "(anonymous)"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", p.UserID, p.ParticipantID, displayName)
+		role := "participant"
+		switch {
+		case p.Removed:
+			role = "removed"
+		case p.IsCreator:
+			role = "creator"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.ID, p.Secret, displayName, role)
 	}
 
 	return w.Flush()
@@ -174,19 +183,12 @@ func ballotExists(ctx context.Context, db *sql.DB, ballotID string) error {
 	return nil
 }
 
-// itemRow holds item data with participant information.
-type itemRow struct {
-	model.Item
-	AddedByParticID string
-}
-
-// getItems retrieves all items for a ballot with display names and participant IDs.
-func getItems(ctx context.Context, db *sql.DB, ballotID string) ([]itemRow, error) {
+// getItems retrieves all items for a ballot with display names.
+func getItems(ctx context.Context, db *sql.DB, ballotID string) ([]model.Item, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT i.id, i.ballot_id, i.name, i.added_by, i.created_at,
-		       COALESCE(bp.display_name, ''), COALESCE(bp.participant_id, '')
+		SELECT i.id, i.ballot_id, i.name, i.added_by, i.created_at, COALESCE(p.display_name, '')
 		FROM items i
-		LEFT JOIN ballot_participants bp ON i.ballot_id = bp.ballot_id AND i.added_by = bp.user_id
+		LEFT JOIN participants p ON p.ballot_id = i.ballot_id AND p.id = i.added_by
 		WHERE i.ballot_id = ?
 		ORDER BY i.id
 	`, ballotID)
@@ -195,10 +197,10 @@ func getItems(ctx context.Context, db *sql.DB, ballotID string) ([]itemRow, erro
 	}
 	defer rows.Close()
 
-	var items []itemRow
+	var items []model.Item
 	for rows.Next() {
-		var item itemRow
-		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt, &item.AddedByName, &item.AddedByParticID); err != nil {
+		var item model.Item
+		if err := rows.Scan(&item.ID, &item.BallotID, &item.Name, &item.AddedBy, &item.CreatedAt, &item.AddedByName); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -206,13 +208,13 @@ func getItems(ctx context.Context, db *sql.DB, ballotID string) ([]itemRow, erro
 	return items, rows.Err()
 }
 
-// getParticipants retrieves all participants for a ballot with user IDs.
+// getParticipants retrieves all participants for a ballot, including removed ones.
 func getParticipants(ctx context.Context, db *sql.DB, ballotID string) ([]participantRow, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT user_id, participant_id, display_name
-		FROM ballot_participants
+		SELECT id, COALESCE(secret, ''), display_name, is_creator, removed_at IS NOT NULL
+		FROM participants
 		WHERE ballot_id = ?
-		ORDER BY created_at
+		ORDER BY created_at, rowid
 	`, ballotID)
 	if err != nil {
 		return nil, err
@@ -222,7 +224,7 @@ func getParticipants(ctx context.Context, db *sql.DB, ballotID string) ([]partic
 	var participants []participantRow
 	for rows.Next() {
 		var p participantRow
-		if err := rows.Scan(&p.UserID, &p.ParticipantID, &p.DisplayName); err != nil {
+		if err := rows.Scan(&p.ID, &p.Secret, &p.DisplayName, &p.IsCreator, &p.Removed); err != nil {
 			return nil, err
 		}
 		participants = append(participants, p)
@@ -231,14 +233,14 @@ func getParticipants(ctx context.Context, db *sql.DB, ballotID string) ([]partic
 }
 
 // computeResults computes the Schulze ranking for a ballot.
-func computeResults(ctx context.Context, db *sql.DB, ballotID string, items []itemRow) ([]resultEntry, error) {
+func computeResults(ctx context.Context, db *sql.DB, ballotID string, items []model.Item) ([]resultEntry, error) {
 	if len(items) == 0 {
 		return []resultEntry{}, nil
 	}
 
 	// Build item index mapping
 	idToIndex := make(map[int64]int)
-	indexToItem := make(map[int]itemRow)
+	indexToItem := make(map[int]model.Item)
 	for i, item := range items {
 		idToIndex[item.ID] = i
 		indexToItem[i] = item
@@ -246,28 +248,28 @@ func computeResults(ctx context.Context, db *sql.DB, ballotID string, items []it
 
 	// Get all rankings for this ballot
 	rows, err := db.QueryContext(ctx,
-		"SELECT user_id, item_id, position FROM rankings WHERE ballot_id = ?",
+		"SELECT participant_id, item_id, position FROM rankings WHERE ballot_id = ?",
 		ballotID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	// Build preferences by user
-	prefsByUser := make(map[string]schulze.Preference)
+	// Build preferences by participant
+	prefsByParticipant := make(map[string]schulze.Preference)
 	for rows.Next() {
-		var userID string
+		var participantID string
 		var itemID int64
 		var position int
-		if err := rows.Scan(&userID, &itemID, &position); err != nil {
+		if err := rows.Scan(&participantID, &itemID, &position); err != nil {
 			return nil, err
 		}
 
-		if _, ok := prefsByUser[userID]; !ok {
-			prefsByUser[userID] = make(schulze.Preference)
+		if _, ok := prefsByParticipant[participantID]; !ok {
+			prefsByParticipant[participantID] = make(schulze.Preference)
 		}
 		if idx, ok := idToIndex[itemID]; ok {
-			prefsByUser[userID][idx] = position
+			prefsByParticipant[participantID][idx] = position
 		}
 	}
 
@@ -276,8 +278,8 @@ func computeResults(ctx context.Context, db *sql.DB, ballotID string, items []it
 	}
 
 	// Convert to slice of preferences
-	prefs := make([]schulze.Preference, 0, len(prefsByUser))
-	for _, p := range prefsByUser {
+	prefs := make([]schulze.Preference, 0, len(prefsByParticipant))
+	for _, p := range prefsByParticipant {
 		prefs = append(prefs, p)
 	}
 
@@ -289,10 +291,10 @@ func computeResults(ctx context.Context, db *sql.DB, ballotID string, items []it
 	for i, r := range results {
 		item := indexToItem[r.CandidateIndex]
 		entries[i] = resultEntry{
-			Rank:            r.Rank,
-			Name:            item.Name,
-			AddedByName:     item.AddedByName,
-			AddedByParticID: item.AddedByParticID,
+			Rank:        r.Rank,
+			Name:        item.Name,
+			AddedByName: item.AddedByName,
+			AddedBy:     item.AddedBy,
 		}
 	}
 

@@ -1,17 +1,11 @@
 package handler
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"unicode/utf8"
-
-	"github.com/civilfritz/civilsort/internal/protocol"
 )
 
 func TestCleanText(t *testing.T) {
@@ -38,29 +32,21 @@ func TestCleanText(t *testing.T) {
 	}
 }
 
-func saveRankings(t *testing.T, h *Handler, ballotID, userID string, order []int64) *httptest.ResponseRecorder {
-	t.Helper()
-	body, err := json.Marshal(protocol.SaveRankingsRequest{Order: order})
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest("POST", "/ballot/"+ballotID+"/rankings", bytes.NewReader(body))
-	req = req.WithContext(context.WithValue(req.Context(), userIDKey, userID))
-	req.SetPathValue("id", ballotID)
-	rec := httptest.NewRecorder()
-	h.HandleSaveRankings(rec, req)
-	return rec
-}
-
 func TestHandleSaveRankings_RejectsInvalidOrder(t *testing.T) {
 	h := testHandler(t)
-	ballotID := newBallot(t, h)
-	userID, _, _ := newParticipant(t, h, ballotID)
-	item := insertItem(t, h.db, ballotID, "Mine", userID)
+	ballotID, creator := newBallot(t, h)
+	item := insertItem(t, h.db, ballotID, "Mine", creator.ID)
 
-	otherBallot := newBallot(t, h)
-	otherUser, _, _ := newParticipant(t, h, otherBallot)
-	foreign := insertItem(t, h.db, otherBallot, "Theirs", otherUser)
+	otherBallot, otherCreator := newBallot(t, h)
+	foreign := insertItem(t, h.db, otherBallot, "Theirs", otherCreator.ID)
+
+	save := func(order []int64) int {
+		return do(t, h.HandleSaveRankings, "POST", req{
+			as:   &creator,
+			path: map[string]string{"id": ballotID},
+			json: map[string]any{"order": order},
+		}).Code
+	}
 
 	tests := map[string][]int64{
 		"duplicate":    {item, item},
@@ -69,40 +55,35 @@ func TestHandleSaveRankings_RejectsInvalidOrder(t *testing.T) {
 	}
 	for name, order := range tests {
 		t.Run(name, func(t *testing.T) {
-			if rec := saveRankings(t, h, ballotID, userID, order); rec.Code != http.StatusBadRequest {
-				t.Errorf("got %d, want 400: %s", rec.Code, rec.Body)
+			if code := save(order); code != http.StatusBadRequest {
+				t.Errorf("got %d, want 400", code)
 			}
 		})
 	}
 
-	if rec := saveRankings(t, h, ballotID, userID, []int64{item}); rec.Code != http.StatusNoContent {
-		t.Errorf("valid order: got %d, want 204: %s", rec.Code, rec.Body)
+	if code := save([]int64{item}); code != http.StatusNoContent {
+		t.Errorf("valid order: got %d, want 204", code)
 	}
-}
-
-func postForm(t *testing.T, h *Handler, handle http.HandlerFunc, ballotID, userID string, form url.Values) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req = req.WithContext(context.WithValue(req.Context(), userIDKey, userID))
-	req.SetPathValue("id", ballotID)
-	rec := httptest.NewRecorder()
-	handle(rec, req)
-	return rec
 }
 
 func TestHandleAddItem_WhitespaceAndLength(t *testing.T) {
 	h := testHandler(t)
-	ballotID := newBallot(t, h)
-	userID, _, _ := newParticipant(t, h, ballotID)
+	ballotID, creator := newBallot(t, h)
+	add := func(name string) int {
+		return do(t, h.HandleAddItem, "POST", req{
+			as:   &creator,
+			path: map[string]string{"id": ballotID},
+			form: url.Values{"name": {name}},
+		}).Code
+	}
 
-	if rec := postForm(t, h, h.HandleAddItem, ballotID, userID, url.Values{"name": {"   "}}); rec.Code != http.StatusBadRequest {
-		t.Errorf("whitespace-only name: got %d, want 400", rec.Code)
+	if code := add("   "); code != http.StatusBadRequest {
+		t.Errorf("whitespace-only name: got %d, want 400", code)
 	}
 
 	long := strings.Repeat("é", maxNameLength+10)
-	if rec := postForm(t, h, h.HandleAddItem, ballotID, userID, url.Values{"name": {"  " + long}}); rec.Code != http.StatusNoContent {
-		t.Fatalf("long name: got %d, want 204: %s", rec.Code, rec.Body)
+	if code := add("  " + long); code != http.StatusNoContent {
+		t.Fatalf("long name: got %d, want 204", code)
 	}
 	var name string
 	if err := h.db.QueryRow("SELECT name FROM items WHERE ballot_id = ?", ballotID).Scan(&name); err != nil {
@@ -115,17 +96,22 @@ func TestHandleAddItem_WhitespaceAndLength(t *testing.T) {
 
 func TestHandleSetName_TruncatesByCharacter(t *testing.T) {
 	h := testHandler(t)
-	ballotID := newBallot(t, h)
-	userID, _, _ := newParticipant(t, h, ballotID)
+	ballotID, creator := newBallot(t, h)
 
 	// 49 ASCII bytes then a 2-byte character: byte truncation at 50 would split it.
 	name := strings.Repeat("a", 49) + "éxyz"
-	if rec := postForm(t, h, h.HandleSetName, ballotID, userID, url.Values{"name": {" " + name + " "}}); rec.Code != http.StatusNoContent {
+	rec := do(t, h.HandleSetName, "POST", req{
+		as:   &creator,
+		path: map[string]string{"id": ballotID},
+		form: url.Values{"name": {" " + name + " "}},
+	})
+	if rec.Code != http.StatusNoContent {
 		t.Fatalf("got %d, want 204", rec.Code)
 	}
 
 	var got string
-	if err := h.db.QueryRow("SELECT display_name FROM ballot_participants WHERE user_id = ?", userID).Scan(&got); err != nil {
+	if err := h.db.QueryRow("SELECT display_name FROM participants WHERE ballot_id = ? AND id = ?",
+		ballotID, creator.ID).Scan(&got); err != nil {
 		t.Fatal(err)
 	}
 	if want := strings.Repeat("a", 49) + "é"; got != want {

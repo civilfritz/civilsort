@@ -1,13 +1,8 @@
 package handler
 
 import (
-	"bytes"
-	"context"
-	"database/sql"
 	"encoding/json"
-	"github.com/civilfritz/civilsort/internal/util"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -16,31 +11,25 @@ import (
 func TestHandleCreateBallot(t *testing.T) {
 	h := testHandler(t)
 
-	form := url.Values{}
-	form.Set("title", "Test Ballot")
-	req, rec, _ := authedRequest(t, h, "POST", "/", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := do(t, h.HandleCreateBallot, "POST", req{form: url.Values{"title": {"Test Ballot"}}})
 
-	h.HandleCreateBallot(rec, req)
-
-	// Should redirect
 	if rec.Code != http.StatusSeeOther {
-		t.Errorf("Expected status 303, got %d", rec.Code)
+		t.Fatalf("Expected status 303, got %d", rec.Code)
 	}
-
 	location := rec.Header().Get("Location")
 	if !strings.HasPrefix(location, "/ballot/") {
-		t.Errorf("Expected redirect to /ballot/..., got %s", location)
+		t.Fatalf("Expected redirect to /ballot/..., got %s", location)
+	}
+
+	ballotID := strings.Split(location, "/")[2]
+	if n := countRows(t, h, "SELECT COUNT(*) FROM participants WHERE ballot_id = ? AND is_creator", ballotID); n != 1 {
+		t.Errorf("Expected 1 creator, got %d", n)
 	}
 }
 
 func TestHandleBallot_NotFound(t *testing.T) {
 	h := testHandler(t)
-	req, rec, _ := authedRequest(t, h, "GET", "/ballot/nonexistent", nil)
-	req.SetPathValue("id", "nonexistent")
-
-	h.HandleBallot(rec, req)
-
+	rec := do(t, h.HandleBallot, "GET", req{path: map[string]string{"id": "nonexistent"}})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("Expected status 404, got %d", rec.Code)
 	}
@@ -48,68 +37,25 @@ func TestHandleBallot_NotFound(t *testing.T) {
 
 func TestHandleBallot_NewParticipant(t *testing.T) {
 	h := testHandler(t)
+	ballotID, _ := newBallot(t, h)
 
-	// Create creator user first
-	creatorID := util.GenerateUUID()
-	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", creatorID)
-	if err != nil {
-		t.Fatalf("Failed to create creator user: %v", err)
-	}
+	rec := do(t, h.HandleBallot, "GET", req{path: map[string]string{"id": ballotID}})
 
-	// Create a ballot
-	ballotID := generateBallotID()
-	_, err = h.db.Exec("INSERT INTO ballots (id, title, is_open, created_by) VALUES (?, ?, 1, ?)",
-		ballotID, "Test", creatorID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-
-	req, rec, userID := authedRequest(t, h, "GET", "/ballot/"+ballotID, nil)
-	req.SetPathValue("id", ballotID)
-
-	h.HandleBallot(rec, req)
-
-	// Should redirect to participant-specific URL
 	if rec.Code != http.StatusSeeOther {
 		t.Errorf("Expected status 303, got %d", rec.Code)
 	}
-
-	// User should be added as participant
-	var count int
-	err = h.db.QueryRow("SELECT COUNT(*) FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
-		ballotID, userID).Scan(&count)
-	if err != nil {
-		t.Fatalf("Failed to query participants: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("Expected user to be added as participant")
+	if n := countRows(t, h, "SELECT COUNT(*) FROM participants WHERE ballot_id = ?", ballotID); n != 2 {
+		t.Errorf("Expected visitor to be added as participant, got %d participants", n)
 	}
 }
 
 func TestHandleBallot_ClosedBallot_NonParticipant(t *testing.T) {
 	h := testHandler(t)
+	ballotID, _ := newBallot(t, h)
+	setOpen(t, h, ballotID, false)
 
-	// Create creator user first
-	creatorID := util.GenerateUUID()
-	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", creatorID)
-	if err != nil {
-		t.Fatalf("Failed to create creator user: %v", err)
-	}
+	rec := do(t, h.HandleBallot, "GET", req{path: map[string]string{"id": ballotID}})
 
-	// Create a closed ballot
-	ballotID := generateBallotID()
-	_, err = h.db.Exec("INSERT INTO ballots (id, title, is_open, created_by) VALUES (?, ?, 0, ?)",
-		ballotID, "Test", creatorID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-
-	req, rec, _ := authedRequest(t, h, "GET", "/ballot/"+ballotID, nil)
-	req.SetPathValue("id", ballotID)
-
-	h.HandleBallot(rec, req)
-
-	// Should return 403
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("Expected status 403, got %d", rec.Code)
 	}
@@ -117,68 +63,32 @@ func TestHandleBallot_ClosedBallot_NonParticipant(t *testing.T) {
 
 func TestHandleAddItem(t *testing.T) {
 	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
 
-	// Create ballot and make user a participant
-	_, _, userID := authedRequest(t, h, "POST", "/ballot/test/items", nil)
+	rec := do(t, h.HandleAddItem, "POST", req{
+		as:   &creator,
+		path: map[string]string{"id": ballotID},
+		form: url.Values{"name": {"Test Item"}},
+	})
 
-	ballotID := generateBallotID()
-	_, err := h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		ballotID, "Test", userID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-	_, err = h.db.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		ballotID, userID, generateParticipantID())
-	if err != nil {
-		t.Fatalf("Failed to add participant: %v", err)
-	}
-
-	form := url.Values{}
-	form.Set("name", "Test Item")
-	req, rec, _ := authedRequest(t, h, "POST", "/ballot/"+ballotID+"/items", strings.NewReader(form.Encode()))
-	req.SetPathValue("id", ballotID)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	h.HandleAddItem(rec, req)
-
-	// Should succeed
 	if rec.Code != http.StatusNoContent {
-		t.Errorf("Expected status 204, got %d", rec.Code)
+		t.Fatalf("Expected status 204, got %d", rec.Code)
 	}
-
-	// Item should exist in database
-	var count int
-	err = h.db.QueryRow("SELECT COUNT(*) FROM items WHERE ballot_id = ? AND name = ?",
-		ballotID, "Test Item").Scan(&count)
-	if err != nil {
-		t.Fatalf("Failed to query item: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("Expected 1 item, got %d", count)
+	if n := countRows(t, h, "SELECT COUNT(*) FROM items WHERE ballot_id = ? AND name = ? AND added_by = ?",
+		ballotID, "Test Item", creator.ID); n != 1 {
+		t.Errorf("Expected item attributed to creator, got %d", n)
 	}
 }
 
 func TestHandleAddItem_Empty(t *testing.T) {
 	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
 
-	req, rec, userID := authedRequest(t, h, "POST", "/ballot/test/items", strings.NewReader("name="))
-
-	ballotID := generateBallotID()
-	_, err := h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		ballotID, "Test", userID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-	_, err = h.db.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		ballotID, userID, generateParticipantID())
-	if err != nil {
-		t.Fatalf("Failed to add participant: %v", err)
-	}
-
-	req.SetPathValue("id", ballotID)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	h.HandleAddItem(rec, req)
+	rec := do(t, h.HandleAddItem, "POST", req{
+		as:   &creator,
+		path: map[string]string{"id": ballotID},
+		form: url.Values{"name": {""}},
+	})
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("Expected status 400, got %d", rec.Code)
@@ -187,77 +97,37 @@ func TestHandleAddItem_Empty(t *testing.T) {
 
 func TestHandleSaveRankings(t *testing.T) {
 	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
+	item1 := insertItem(t, h.db, ballotID, "Item 1", creator.ID)
+	item2 := insertItem(t, h.db, ballotID, "Item 2", creator.ID)
 
-	// Create user and ballot setup
-	_, _, userID := authedRequest(t, h, "GET", "/", nil)
-
-	ballotID := generateBallotID()
-	_, err := h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		ballotID, "Test", userID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-	_, err = h.db.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		ballotID, userID, generateParticipantID())
-	if err != nil {
-		t.Fatalf("Failed to add participant: %v", err)
-	}
-
-	// Add items
-	item1 := insertItem(t, h.db, ballotID, "Item 1", userID)
-	item2 := insertItem(t, h.db, ballotID, "Item 2", userID)
-
-	// Save rankings
-	payload := map[string]interface{}{
-		"order": []int64{item1, item2},
-	}
-	body, _ := json.Marshal(payload)
-
-	// Create request for the SAME user
-	req := httptest.NewRequest("POST", "/ballot/"+ballotID+"/rankings", bytes.NewReader(body))
-	req = req.WithContext(context.WithValue(req.Context(), userIDKey, userID))
-	req.SetPathValue("id", ballotID)
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.HandleSaveRankings(rec, req)
+	rec := do(t, h.HandleSaveRankings, "POST", req{
+		as:   &creator,
+		path: map[string]string{"id": ballotID},
+		json: map[string]any{"order": []int64{item2, item1}},
+	})
 
 	if rec.Code != http.StatusNoContent {
-		t.Errorf("Expected status 204, got %d", rec.Code)
+		t.Fatalf("Expected status 204, got %d: %s", rec.Code, rec.Body)
 	}
-
-	// Rankings should be in database
-	var count int
-	err = h.db.QueryRow("SELECT COUNT(*) FROM rankings WHERE ballot_id = ? AND user_id = ?",
-		ballotID, userID).Scan(&count)
+	rankings, err := h.getRankings(t.Context(), ballotID, creator.ID)
 	if err != nil {
-		t.Fatalf("Failed to query rankings: %v", err)
+		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Errorf("Expected 2 rankings, got %d", count)
+	if len(rankings) != 2 || rankings[0].ItemID != item2 || rankings[1].ItemID != item1 {
+		t.Errorf("Unexpected rankings: %+v", rankings)
 	}
 }
 
 func TestHandleSaveRankings_InvalidJSON(t *testing.T) {
 	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
 
-	req, rec, userID := authedRequest(t, h, "POST", "/ballot/test/rankings", strings.NewReader("invalid json"))
-
-	ballotID := generateBallotID()
-	_, err := h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		ballotID, "Test", userID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-	_, err = h.db.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		ballotID, userID, generateParticipantID())
-	if err != nil {
-		t.Fatalf("Failed to add participant: %v", err)
-	}
-
-	req.SetPathValue("id", ballotID)
-
-	h.HandleSaveRankings(rec, req)
+	rec := do(t, h.HandleSaveRankings, "POST", req{
+		as:   &creator,
+		path: map[string]string{"id": ballotID},
+		form: url.Values{"not": {"json"}},
+	})
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("Expected status 400, got %d", rec.Code)
@@ -266,63 +136,27 @@ func TestHandleSaveRankings_InvalidJSON(t *testing.T) {
 
 func TestHandleToggleOpen(t *testing.T) {
 	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
 
-	req, rec, userID := authedRequest(t, h, "POST", "/ballot/test/toggle", nil)
-
-	ballotID := generateBallotID()
-	_, err := h.db.Exec("INSERT INTO ballots (id, title, is_open, created_by) VALUES (?, ?, 1, ?)",
-		ballotID, "Test", userID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-	_, err = h.db.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		ballotID, userID, generateParticipantID())
-	if err != nil {
-		t.Fatalf("Failed to add participant: %v", err)
-	}
-
-	req.SetPathValue("id", ballotID)
-
-	h.HandleToggleOpen(rec, req)
+	rec := do(t, h.HandleToggleOpen, "POST", req{as: &creator, path: map[string]string{"id": ballotID}})
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
+		t.Fatalf("Expected status 200, got %d", rec.Code)
 	}
-
-	// Should return JSON
 	var response map[string]bool
-	err = json.Unmarshal(rec.Body.Bytes(), &response)
-	if err != nil {
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("Failed to parse JSON response: %v", err)
 	}
-
-	// Should have toggled to closed
-	if response["isOpen"] != false {
+	if response["isOpen"] {
 		t.Error("Expected isOpen to be false")
 	}
 }
 
 func TestHandleToggleOpen_NotParticipant(t *testing.T) {
 	h := testHandler(t)
+	ballotID, _ := newBallot(t, h)
 
-	req, rec, _ := authedRequest(t, h, "POST", "/ballot/test/toggle", nil)
-
-	differentUserID := util.GenerateUUID()
-	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", differentUserID)
-	if err != nil {
-		t.Fatalf("Failed to create different user: %v", err)
-	}
-
-	ballotID := generateBallotID()
-	_, err = h.db.Exec("INSERT INTO ballots (id, title, is_open, created_by) VALUES (?, ?, 1, ?)",
-		ballotID, "Test", differentUserID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-
-	req.SetPathValue("id", ballotID)
-
-	h.HandleToggleOpen(rec, req)
+	rec := do(t, h.HandleToggleOpen, "POST", req{path: map[string]string{"id": ballotID}})
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("Expected status 403, got %d", rec.Code)
@@ -331,36 +165,21 @@ func TestHandleToggleOpen_NotParticipant(t *testing.T) {
 
 func TestHandleSetName(t *testing.T) {
 	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
 
-	req, rec, userID := authedRequest(t, h, "POST", "/ballot/test/name", strings.NewReader("name=TestUser"))
-
-	ballotID := generateBallotID()
-	_, err := h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		ballotID, "Test", userID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-	_, err = h.db.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		ballotID, userID, generateParticipantID())
-	if err != nil {
-		t.Fatalf("Failed to add participant: %v", err)
-	}
-
-	req.SetPathValue("id", ballotID)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	h.HandleSetName(rec, req)
+	rec := do(t, h.HandleSetName, "POST", req{
+		as:   &creator,
+		path: map[string]string{"id": ballotID},
+		form: url.Values{"name": {"TestUser"}},
+	})
 
 	if rec.Code != http.StatusNoContent {
-		t.Errorf("Expected status 204, got %d", rec.Code)
+		t.Fatalf("Expected status 204, got %d", rec.Code)
 	}
-
-	// Name should be in database
 	var displayName string
-	err = h.db.QueryRow("SELECT display_name FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
-		ballotID, userID).Scan(&displayName)
-	if err != nil {
-		t.Fatalf("Failed to query display name: %v", err)
+	if err := h.db.QueryRow("SELECT display_name FROM participants WHERE ballot_id = ? AND id = ?",
+		ballotID, creator.ID).Scan(&displayName); err != nil {
+		t.Fatal(err)
 	}
 	if displayName != "TestUser" {
 		t.Errorf("Expected display name 'TestUser', got %s", displayName)
@@ -369,42 +188,14 @@ func TestHandleSetName(t *testing.T) {
 
 func TestHandleSetName_NotParticipant(t *testing.T) {
 	h := testHandler(t)
+	ballotID, _ := newBallot(t, h)
 
-	req, rec, _ := authedRequest(t, h, "POST", "/ballot/test/name", strings.NewReader("name=TestUser"))
-
-	differentUserID := util.GenerateUUID()
-	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", differentUserID)
-	if err != nil {
-		t.Fatalf("Failed to create different user: %v", err)
-	}
-
-	ballotID := generateBallotID()
-	_, err = h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		ballotID, "Test", differentUserID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-
-	req.SetPathValue("id", ballotID)
-
-	h.HandleSetName(rec, req)
+	rec := do(t, h.HandleSetName, "POST", req{
+		path: map[string]string{"id": ballotID},
+		form: url.Values{"name": {"TestUser"}},
+	})
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("Expected status 403, got %d", rec.Code)
 	}
-}
-
-// insertItem inserts an item and returns its ID, failing the test on error.
-func insertItem(t *testing.T, db *sql.DB, ballotID, name, addedBy string) int64 {
-	t.Helper()
-	result, err := db.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
-		ballotID, name, addedBy)
-	if err != nil {
-		t.Fatalf("Failed to insert item %q: %v", name, err)
-	}
-	id, err := result.LastInsertId()
-	if err != nil {
-		t.Fatalf("Failed to get item ID: %v", err)
-	}
-	return id
 }

@@ -27,9 +27,9 @@ func (h *Handler) HandleStats(w http.ResponseWriter, r *http.Request) {
 		COUNT(*) AS total_ballots,
 		MAX(DATE(created_at)) AS newest_ballot,
 		COALESCE((SELECT MAX(cnt) FROM (SELECT COUNT(*) AS cnt FROM items GROUP BY ballot_id)), 0) AS max_entries,
-		COALESCE((SELECT MAX(cnt) FROM (SELECT COUNT(DISTINCT user_id) AS cnt FROM rankings GROUP BY ballot_id)), 0) AS max_participants,
+		COALESCE((SELECT MAX(cnt) FROM (SELECT COUNT(DISTINCT participant_id) AS cnt FROM rankings GROUP BY ballot_id)), 0) AS max_participants,
 		COALESCE((SELECT AVG(cnt) FROM (SELECT COUNT(*) AS cnt FROM items GROUP BY ballot_id)), 0) AS avg_entries,
-		COALESCE((SELECT AVG(cnt) FROM (SELECT COUNT(DISTINCT user_id) AS cnt FROM rankings GROUP BY ballot_id)), 0) AS avg_participants
+		COALESCE((SELECT AVG(cnt) FROM (SELECT COUNT(DISTINCT participant_id) AS cnt FROM rankings GROUP BY ballot_id)), 0) AS avg_participants
 	FROM ballots
 	`
 

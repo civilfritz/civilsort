@@ -2,43 +2,35 @@ package model
 
 import "time"
 
-// User represents a participant identified by a browser cookie.
-type User struct {
-	ID          string
-	DisplayName string
-	CreatedAt   time.Time
-}
-
 // Ballot represents a voting session.
 type Ballot struct {
-	ID        string
-	Title     string
-	IsOpen    bool
-	CreatedBy string
-	CreatedAt time.Time
+	ID              string
+	Title           string
+	IsOpen          bool // accepting new participants
+	RankingsPrivate bool
+	CreatedAt       time.Time
 }
 
 // Item represents a candidate option on a ballot.
 type Item struct {
-	ID              int64
-	BallotID        string
-	Name            string
-	AddedBy         string // user ID; never send to clients
-	AddedByName     string
-	AddedByPublicID string
-	CreatedAt       time.Time
+	ID          int64
+	BallotID    string
+	Name        string
+	AddedBy     string // participant ID
+	AddedByName string
+	CreatedAt   time.Time
 }
 
-// Ranking represents one user's ranking of one item.
+// Ranking represents one participant's ranking of one item.
 type Ranking struct {
-	BallotID string
-	UserID   string
-	ItemID   int64
-	Position int // 1 = most preferred
+	BallotID      string
+	ParticipantID string
+	ItemID        int64
+	Position      int // 1 = most preferred
 }
 
-// Participant represents a ballot participant as other participants see them.
+// Participant is a member of one ballot, as other participants see them.
 type Participant struct {
+	ID          string
 	DisplayName string
-	PublicID    string
 }

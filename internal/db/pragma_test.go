@@ -56,10 +56,10 @@ func TestOpen_DeletingItemCascadesToRankings(t *testing.T) {
 	defer held.Close()
 
 	for _, stmt := range []string{
-		`INSERT INTO users (id) VALUES ('u')`,
-		`INSERT INTO ballots (id, created_by) VALUES ('b', 'u')`,
+		`INSERT INTO ballots (id) VALUES ('b')`,
+		`INSERT INTO participants (ballot_id, id, secret, display_name) VALUES ('b', 'u', 's', 'U')`,
 		`INSERT INTO items (id, ballot_id, name, added_by) VALUES (1, 'b', 'A', 'u')`,
-		`INSERT INTO rankings (ballot_id, user_id, item_id, position) VALUES ('b', 'u', 1, 1)`,
+		`INSERT INTO rankings (ballot_id, participant_id, item_id, position) VALUES ('b', 'u', 1, 1)`,
 		`DELETE FROM items WHERE id = 1`,
 	} {
 		if _, err := database.ExecContext(ctx, stmt); err != nil {

@@ -13,7 +13,7 @@ func TestOpen_CreatesTablesSuccessfully(t *testing.T) {
 	defer database.Close()
 
 	// Verify all expected tables exist
-	expectedTables := []string{"users", "ballots", "items", "rankings", "ballot_participants"}
+	expectedTables := []string{"ballots", "participants", "items", "rankings"}
 	for _, table := range expectedTables {
 		var name string
 		err := database.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)

@@ -47,14 +47,9 @@ func TestUserMiddleware_NewUser(t *testing.T) {
 		t.Errorf("Expected cookie name %s, got %s", cookieName, cookies[0].Name)
 	}
 
-	// Visiting must not create a users row; joining a ballot does.
-	var count int
-	err := h.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
-	if err != nil {
-		t.Fatalf("Failed to query database: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("Expected no users in database, got %d", count)
+	// Visiting must not write to the database.
+	if n := countRows(t, h, "SELECT COUNT(*) FROM participants"); n != 0 {
+		t.Errorf("Expected no participants, got %d", n)
 	}
 }
 
@@ -90,12 +85,9 @@ func TestUserMiddleware_CookieWithoutUserRow(t *testing.T) {
 func TestUserMiddleware_ExistingUser(t *testing.T) {
 	h := testHandler(t)
 
-	// Create a user in the database
-	userID := util.GenerateUUID()
-	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", userID)
-	if err != nil {
-		t.Fatalf("Failed to create test user: %v", err)
-	}
+	// A user who has joined a ballot
+	ballotID, _ := newBallot(t, h)
+	userID := join(t, h, ballotID).userID
 
 	// Create a request with a valid cookie
 	req := httptest.NewRequest("GET", "/", nil)
@@ -122,15 +114,6 @@ func TestUserMiddleware_ExistingUser(t *testing.T) {
 		t.Error("IsFreshCookie should return false for existing user")
 	}
 
-	// Should not create a duplicate user
-	var count int
-	err = h.db.QueryRow("SELECT COUNT(*) FROM users WHERE id = ?", userID).Scan(&count)
-	if err != nil {
-		t.Fatalf("Failed to query database: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("Expected 1 user in database, got %d", count)
-	}
 }
 
 func TestUserMiddleware_InvalidCookie(t *testing.T) {
@@ -171,26 +154,8 @@ func TestUserMiddleware_InvalidCookie(t *testing.T) {
 	}
 }
 
-func TestUserID_FromContext(t *testing.T) {
-	req, _, userID := authedRequest(t, testHandler(t), "GET", "/", nil)
-
-	gotUserID := UserID(req.Context())
-	if gotUserID != userID {
-		t.Errorf("Expected userID %s, got %s", userID, gotUserID)
-	}
-}
-
-func TestIsFreshCookie_FromContext(t *testing.T) {
-	req, _, _ := authedRequest(t, testHandler(t), "GET", "/", nil)
-
-	// authedRequest sets fresh=false
-	if IsFreshCookie(req.Context()) {
-		t.Error("Expected IsFreshCookie to return false")
-	}
-}
-
-// Creating a ballot is a user's first write, so it must create their row.
-func TestHandleCreateBallot_CreatesUser(t *testing.T) {
+// Creating a ballot makes the requester its creator participant.
+func TestHandleCreateBallot_CreatesCreator(t *testing.T) {
 	h := testHandler(t)
 
 	userID := util.GenerateUUID()
@@ -203,12 +168,8 @@ func TestHandleCreateBallot_CreatesUser(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("Expected 303, got %d: %s", rec.Code, rec.Body)
 	}
-	var exists bool
-	if err := h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", userID).Scan(&exists); err != nil {
-		t.Fatal(err)
-	}
-	if !exists {
-		t.Error("Creating a ballot should create the user row")
+	if n := countRows(t, h, "SELECT COUNT(*) FROM participants WHERE legacy_user_id = ? AND is_creator", userID); n != 1 {
+		t.Errorf("Expected the requester to be the creator, got %d rows", n)
 	}
 }
 

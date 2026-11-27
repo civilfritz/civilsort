@@ -21,22 +21,21 @@ type ResultEntry struct {
 	Name string `json:"name"`
 }
 
-// Messages are broadcast to every participant, so they must identify people
-// only by public ID: never by user ID (the voter_id cookie) or participant ID
-// (the private re-join link).
+// Messages are broadcast to everyone watching a ballot, so they identify
+// people only by participant ID, never by their secret.
 
 // ItemEntry is a ballot item for client-side rendering.
 type ItemEntry struct {
-	ID              int64  `json:"id"`
-	Name            string `json:"name"`
-	AddedByPublicID string `json:"addedByPublicId"`
-	AddedByName     string `json:"addedByName"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	AddedBy     string `json:"addedBy"` // participant ID
+	AddedByName string `json:"addedByName"`
 }
 
 // ParticipantEntry is a ballot participant for client-side rendering.
 type ParticipantEntry struct {
-	DisplayName string `json:"displayName"`
-	PublicID    string `json:"publicId"`
+	DisplayName   string `json:"displayName"`
+	ParticipantID string `json:"participantId"`
 }
 
 // ResultsMessage is sent when rankings change.
@@ -80,7 +79,7 @@ type ToggleResponse struct {
 }
 
 // RankedItem is one entry in the body returned by
-// GET /ballot/{id}/rankings/{publicID}.
+// GET /ballot/{id}/rankings/{participantID}.
 type RankedItem struct {
 	Name string `json:"name"`
 }

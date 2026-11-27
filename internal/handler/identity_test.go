@@ -10,44 +10,13 @@ import (
 	"github.com/civilfritz/civilsort/internal/protocol"
 )
 
-// newParticipant creates a user, joins them to ballotID via addParticipant, and
-// returns their user ID, participant ID, and public ID.
-func newParticipant(t *testing.T, h *Handler, ballotID string) (userID, participantID, publicID string) {
-	t.Helper()
-	_, _, userID = authedRequest(t, h, "GET", "/", nil)
-	participantID, _, err := h.addParticipant(context.Background(), ballotID, userID)
-	if err != nil {
-		t.Fatalf("addParticipant: %v", err)
-	}
-	if err := h.db.QueryRow("SELECT public_id FROM ballot_participants WHERE ballot_id = ? AND user_id = ?",
-		ballotID, userID).Scan(&publicID); err != nil {
-		t.Fatalf("fetching public_id: %v", err)
-	}
-	if publicID == "" || publicID == participantID {
-		t.Fatalf("public ID %q must be set and differ from participant ID %q", publicID, participantID)
-	}
-	return userID, participantID, publicID
-}
-
-func newBallot(t *testing.T, h *Handler) string {
-	t.Helper()
-	_, _, creator := authedRequest(t, h, "GET", "/", nil)
-	ballotID := generateBallotID()
-	if _, err := h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		ballotID, "Test", creator); err != nil {
-		t.Fatalf("creating ballot: %v", err)
-	}
-	return ballotID
-}
-
 func TestBroadcastsHideSecrets(t *testing.T) {
 	h := testHandler(t)
-	ballotID := newBallot(t, h)
-	userID, participantID, publicID := newParticipant(t, h, ballotID)
-	if _, err := h.db.Exec("UPDATE ballot_participants SET display_name = 'A' WHERE user_id = ?", userID); err != nil {
+	ballotID, creator := newBallot(t, h)
+	if _, err := h.db.Exec("UPDATE participants SET display_name = 'A' WHERE id = ?", creator.ID); err != nil {
 		t.Fatal(err)
 	}
-	insertItem(t, h.db, ballotID, "Item", userID)
+	insertItem(t, h.db, ballotID, "Item", creator.ID)
 
 	s, err := h.snapshot(context.Background(), ballotID)
 	if err != nil {
@@ -59,40 +28,35 @@ func TestBroadcastsHideSecrets(t *testing.T) {
 	}
 	payload := string(data)
 
-	for name, secret := range map[string]string{"user ID": userID, "participant ID": participantID} {
+	for name, secret := range map[string]string{"secret": creator.Secret, "voter_id": creator.userID} {
 		if strings.Contains(payload, secret) {
 			t.Errorf("broadcast contains %s %q: %s", name, secret, payload)
 		}
 	}
-	if !strings.Contains(payload, publicID) {
-		t.Errorf("broadcast should identify participant by public ID %q: %s", publicID, payload)
+	if !strings.Contains(payload, creator.ID) {
+		t.Errorf("broadcast should identify participant by ID %q: %s", creator.ID, payload)
 	}
 }
 
 func TestHandleGetRankings_Access(t *testing.T) {
 	h := testHandler(t)
-	ballotID := newBallot(t, h)
-	viewerID, _, _ := newParticipant(t, h, ballotID)
-	_, targetParticipantID, targetPublicID := newParticipant(t, h, ballotID)
+	ballotID, viewer := newBallot(t, h)
+	target := join(t, h, ballotID)
 
-	get := func(userID, id string) int {
-		req, rec, _ := authedRequest(t, h, "GET", "/", nil)
-		req = req.WithContext(context.WithValue(req.Context(), userIDKey, userID))
-		req.SetPathValue("id", ballotID)
-		req.SetPathValue("publicID", id)
-		h.HandleGetRankings(rec, req)
-		return rec.Code
+	get := func(as *member, id string) int {
+		return do(t, h.HandleGetRankings, "GET", req{
+			as:   as,
+			path: map[string]string{"id": ballotID, "participantID": id},
+		}).Code
 	}
 
-	if code := get(viewerID, targetPublicID); code != http.StatusOK {
-		t.Errorf("participant viewing by public ID: got %d, want 200", code)
+	if code := get(&viewer, target.ID); code != http.StatusOK {
+		t.Errorf("participant viewing by ID: got %d, want 200", code)
 	}
-	if code := get(viewerID, targetParticipantID); code != http.StatusNotFound {
-		t.Errorf("lookup by private participant ID: got %d, want 404", code)
+	if code := get(&viewer, target.Secret); code != http.StatusNotFound {
+		t.Errorf("lookup by secret: got %d, want 404", code)
 	}
-
-	_, _, outsider := authedRequest(t, h, "GET", "/", nil)
-	if code := get(outsider, targetPublicID); code != http.StatusForbidden {
+	if code := get(nil, target.ID); code != http.StatusForbidden {
 		t.Errorf("non-participant: got %d, want 403", code)
 	}
 }

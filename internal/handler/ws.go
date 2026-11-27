@@ -15,8 +15,7 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
 	// Check ballot access
-	ballot := h.checkBallotAccess(w, r, ballotID)
-	if ballot == nil {
+	if _, _, ok := h.checkBallotAccess(w, r, ballotID); !ok {
 		return
 	}
 

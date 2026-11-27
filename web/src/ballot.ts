@@ -17,16 +17,16 @@ const maxReconnectDelay = 30000;
 // Wires up the ballot page. root carries the ballot and user IDs as data attributes.
 export function initBallot(root: HTMLElement): void {
     const ballotId = root.dataset['ballotId'];
-    const currentPublicId = root.dataset['currentPublicId'];
+    const currentParticipantId = root.dataset['currentParticipantId'];
     const rankedList = byId('ranked-list', HTMLUListElement);
     const unrankedList = byId('unranked-list', HTMLUListElement);
 
-    if (!ballotId || !currentPublicId || !rankedList || !unrankedList) {
+    if (!ballotId || !currentParticipantId || !rankedList || !unrankedList) {
         console.error('Ballot page is missing required elements');
         return;
     }
 
-    new BallotPage(ballotId, currentPublicId, rankedList, unrankedList).init();
+    new BallotPage(ballotId, currentParticipantId, rankedList, unrankedList).init();
 }
 
 interface ViewedParticipant {
@@ -45,7 +45,7 @@ class BallotPage {
 
     constructor(
         private readonly ballotId: string,
-        private readonly currentPublicId: string,
+        private readonly currentParticipantId: string,
         private readonly rankedList: HTMLUListElement,
         private readonly unrankedList: HTMLUListElement,
     ) {}
@@ -200,7 +200,7 @@ class BallotPage {
         }
 
         // Add delete button if current user owns it
-        if (item.addedByPublicId === this.currentPublicId) {
+        if (item.addedBy === this.currentParticipantId) {
             const deleteForm = document.createElement('form');
             deleteForm.method = 'POST';
             deleteForm.action = `/ballot/${this.ballotId}/items/${item.id}/delete`;
@@ -406,7 +406,7 @@ class BallotPage {
         // Click a participant to view their rankings
         list.addEventListener('click', (e) => {
             const target = (e.target as Element | null)?.closest<HTMLElement>('.participant-name');
-            const id = target?.dataset['publicId'];
+            const id = target?.dataset['participantId'];
             if (!target || !id) return;
             this.showParticipantRankings({ id, name: target.textContent ?? '' });
         });
@@ -420,7 +420,7 @@ class BallotPage {
         const participants: ParticipantEntry[] = [];
         list.querySelectorAll<HTMLElement>('.participant-name').forEach(li => {
             participants.push({
-                publicId: li.dataset['publicId'] ?? '',
+                participantId: li.dataset['participantId'] ?? '',
                 displayName: li.textContent?.trim() ?? '',
             });
         });
@@ -429,7 +429,7 @@ class BallotPage {
         if (anonText) {
             const count = parseInt(anonText.match(/(\d+)/)?.[1] ?? '1', 10);
             for (let i = 0; i < count; i++) {
-                participants.push({ publicId: '', displayName: '' });
+                participants.push({ participantId: '', displayName: '' });
             }
         }
 
@@ -458,7 +458,7 @@ class BallotPage {
             if (p.displayName) {
                 const li = document.createElement('li');
                 li.className = 'participant-name';
-                li.dataset['publicId'] = p.publicId;
+                li.dataset['participantId'] = p.participantId;
                 li.textContent = p.displayName;
                 list.appendChild(li);
             } else {

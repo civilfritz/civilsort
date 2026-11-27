@@ -8,208 +8,120 @@ import (
 	"github.com/civilfritz/civilsort/internal/db"
 )
 
-func TestListBallots_Empty(t *testing.T) {
+func openDB(t *testing.T) *sql.DB {
+	t.Helper()
 	database, err := db.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer database.Close()
+	t.Cleanup(func() { database.Close() })
+	return database
+}
 
-	err = ListBallots(database)
-	if err != nil {
+func execAll(t *testing.T, database *sql.DB, stmts ...string) {
+	t.Helper()
+	for _, s := range stmts {
+		if _, err := database.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+}
+
+// seedBallot creates ballot1 with creator alice and anonymous bob.
+func seedBallot(t *testing.T, database *sql.DB) {
+	t.Helper()
+	execAll(t, database,
+		`INSERT INTO ballots (id, title) VALUES ('ballot1', 'Test Ballot')`,
+		`INSERT INTO participants (ballot_id, id, secret, display_name, is_creator) VALUES
+			('ballot1', 'alice', 'secretA', 'Alice', 1),
+			('ballot1', 'bob',   'secretB', '',      0)`,
+	)
+}
+
+func TestListBallots_Empty(t *testing.T) {
+	if err := ListBallots(openDB(t)); err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
 }
 
 func TestListBallots_WithData(t *testing.T) {
-	database, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer database.Close()
+	database := openDB(t)
+	seedBallot(t, database)
+	execAll(t, database, `INSERT INTO items (ballot_id, name, added_by) VALUES ('ballot1', 'Item 1', 'alice')`)
 
-	// Create a user
-	_, err = database.Exec("INSERT INTO users (id) VALUES (?)", "user1")
-	if err != nil {
-		t.Fatalf("Failed to create user: %v", err)
-	}
-
-	// Create a ballot
-	_, err = database.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		"ballot1", "Test Ballot", "user1")
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-
-	// Add a participant
-	_, err = database.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		"ballot1", "user1", "part1")
-	if err != nil {
-		t.Fatalf("Failed to add participant: %v", err)
-	}
-
-	// Add an item
-	_, err = database.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
-		"ballot1", "Item 1", "user1")
-	if err != nil {
-		t.Fatalf("Failed to add item: %v", err)
-	}
-
-	err = ListBallots(database)
-	if err != nil {
+	if err := ListBallots(database); err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
 }
 
 func TestListItems_NotFound(t *testing.T) {
-	database, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer database.Close()
-
-	err = ListItems(database, "nonexistent")
-	if err == nil {
-		t.Error("Expected error for nonexistent ballot, got nil")
-	}
-	if !strings.Contains(err.Error(), "not found") {
+	err := ListItems(openDB(t), "nonexistent")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("Expected 'not found' error, got %v", err)
 	}
 }
 
 func TestListItems_Empty(t *testing.T) {
-	database, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer database.Close()
+	database := openDB(t)
+	seedBallot(t, database)
 
-	// Create a user and ballot
-	_, err = database.Exec("INSERT INTO users (id) VALUES (?)", "user1")
-	if err != nil {
-		t.Fatalf("Failed to create user: %v", err)
-	}
-
-	_, err = database.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		"ballot1", "Test", "user1")
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-
-	err = ListItems(database, "ballot1")
-	if err != nil {
+	if err := ListItems(database, "ballot1"); err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
 }
 
 func TestListItems_WithResults(t *testing.T) {
-	database, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer database.Close()
+	database := openDB(t)
+	seedBallot(t, database)
+	execAll(t, database,
+		`INSERT INTO items (id, ballot_id, name, added_by) VALUES (1, 'ballot1', 'Item A', 'alice'), (2, 'ballot1', 'Item B', 'bob')`,
+		// alice prefers A, bob prefers B
+		`INSERT INTO rankings (ballot_id, participant_id, item_id, position) VALUES
+			('ballot1', 'alice', 1, 1), ('ballot1', 'alice', 2, 2),
+			('ballot1', 'bob', 2, 1), ('ballot1', 'bob', 1, 2)`,
+	)
 
-	// Create users
-	_, err = database.Exec("INSERT INTO users (id) VALUES (?), (?)", "user1", "user2")
+	items, err := getItems(t.Context(), database, "ballot1")
 	if err != nil {
-		t.Fatalf("Failed to create users: %v", err)
+		t.Fatal(err)
 	}
-
-	// Create ballot
-	_, err = database.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		"ballot1", "Test", "user1")
+	results, err := computeResults(t.Context(), database, "ballot1", items)
 	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
+		t.Fatal(err)
 	}
-
-	// Add participants
-	_, err = database.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id, display_name) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
-		"ballot1", "user1", "part1", "Alice",
-		"ballot1", "user2", "part2", "Bob")
-	if err != nil {
-		t.Fatalf("Failed to add participants: %v", err)
+	if len(results) != 2 || results[0].Rank != 1 || results[1].Rank != 1 {
+		t.Errorf("Expected a two-way tie, got %+v", results)
 	}
 
-	// Add items
-	item1 := insertItem(t, database, "ballot1", "Item A", "user1")
-	item2 := insertItem(t, database, "ballot1", "Item B", "user2")
-
-	// Add rankings (user1 prefers A, user2 prefers B)
-	_, err = database.Exec("INSERT INTO rankings (ballot_id, user_id, item_id, position) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)",
-		"ballot1", "user1", item1, 1,
-		"ballot1", "user1", item2, 2,
-		"ballot1", "user2", item2, 1,
-		"ballot1", "user2", item1, 2)
-	if err != nil {
-		t.Fatalf("Failed to add rankings: %v", err)
-	}
-
-	err = ListItems(database, "ballot1")
-	if err != nil {
+	if err := ListItems(database, "ballot1"); err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
 }
 
 func TestListParticipants_NotFound(t *testing.T) {
-	database, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer database.Close()
-
-	err = ListParticipants(database, "nonexistent")
-	if err == nil {
-		t.Error("Expected error for nonexistent ballot, got nil")
-	}
-	if !strings.Contains(err.Error(), "not found") {
+	err := ListParticipants(openDB(t), "nonexistent")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("Expected 'not found' error, got %v", err)
 	}
 }
 
 func TestListParticipants_WithData(t *testing.T) {
-	database, err := db.Open(":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	defer database.Close()
+	database := openDB(t)
+	seedBallot(t, database)
+	execAll(t, database, `INSERT INTO participants (ballot_id, id, display_name, removed_at) VALUES ('ballot1', 'carol', 'Carol', datetime('now'))`)
 
-	// Create users
-	_, err = database.Exec("INSERT INTO users (id) VALUES (?), (?)", "user1", "user2")
+	participants, err := getParticipants(t.Context(), database, "ballot1")
 	if err != nil {
-		t.Fatalf("Failed to create users: %v", err)
+		t.Fatal(err)
 	}
-
-	_, err = database.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		"ballot1", "Test", "user1")
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
+	if len(participants) != 3 {
+		t.Fatalf("Expected 3 participants including removed, got %d", len(participants))
+	}
+	if !participants[0].IsCreator || !participants[2].Removed || participants[2].Secret != "" {
+		t.Errorf("Unexpected participants: %+v", participants)
 	}
 
-	// Add participants (each user can only be a participant once per ballot)
-	_, err = database.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id, display_name) VALUES (?, ?, ?, ?), (?, ?, ?, ?)",
-		"ballot1", "user1", "part1", "Alice",
-		"ballot1", "user2", "part2", "")
-	if err != nil {
-		t.Fatalf("Failed to add participants: %v", err)
-	}
-
-	err = ListParticipants(database, "ballot1")
-	if err != nil {
+	if err := ListParticipants(database, "ballot1"); err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
-}
-
-// insertItem inserts an item and returns its ID, failing the test on error.
-func insertItem(t *testing.T, db *sql.DB, ballotID, name, addedBy string) int64 {
-	t.Helper()
-	result, err := db.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
-		ballotID, name, addedBy)
-	if err != nil {
-		t.Fatalf("Failed to insert item %q: %v", name, err)
-	}
-	id, err := result.LastInsertId()
-	if err != nil {
-		t.Fatalf("Failed to get item ID: %v", err)
-	}
-	return id
 }

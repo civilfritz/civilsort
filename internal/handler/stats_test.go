@@ -1,58 +1,23 @@
 package handler
 
 import (
-	"github.com/civilfritz/civilsort/internal/util"
 	"net/http"
 	"testing"
 )
 
 func TestHandleStats_Empty(t *testing.T) {
 	h := testHandler(t)
-	req, rec, _ := authedRequest(t, h, "GET", "/stats", nil)
-
-	h.HandleStats(rec, req)
-
-	if rec.Code != http.StatusOK {
+	if rec := do(t, h.HandleStats, "GET", req{}); rec.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 }
 
 func TestHandleStats_WithData(t *testing.T) {
 	h := testHandler(t)
+	ballotID, creator := newBallot(t, h)
+	insertItem(t, h.db, ballotID, "Item 1", creator.ID)
 
-	// Create some test data
-	userID := util.GenerateUUID()
-	_, err := h.db.Exec("INSERT INTO users (id) VALUES (?)", userID)
-	if err != nil {
-		t.Fatalf("Failed to create user: %v", err)
-	}
-
-	ballotID := generateBallotID()
-	_, err = h.db.Exec("INSERT INTO ballots (id, title, created_by) VALUES (?, ?, ?)",
-		ballotID, "Test Ballot", userID)
-	if err != nil {
-		t.Fatalf("Failed to create ballot: %v", err)
-	}
-
-	// Add a participant
-	_, err = h.db.Exec("INSERT INTO ballot_participants (ballot_id, user_id, participant_id) VALUES (?, ?, ?)",
-		ballotID, userID, generateParticipantID())
-	if err != nil {
-		t.Fatalf("Failed to add participant: %v", err)
-	}
-
-	// Add some items
-	_, err = h.db.Exec("INSERT INTO items (ballot_id, name, added_by) VALUES (?, ?, ?)",
-		ballotID, "Item 1", userID)
-	if err != nil {
-		t.Fatalf("Failed to add item: %v", err)
-	}
-
-	req, rec, _ := authedRequest(t, h, "GET", "/stats", nil)
-
-	h.HandleStats(rec, req)
-
-	if rec.Code != http.StatusOK {
+	if rec := do(t, h.HandleStats, "GET", req{}); rec.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 }

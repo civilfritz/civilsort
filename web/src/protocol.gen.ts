@@ -29,7 +29,7 @@ export interface ResultEntry {
 export interface ItemEntry {
   id: number /* int64 */;
   name: string;
-  addedByPublicId: string;
+  addedBy: string; // participant ID
   addedByName: string;
 }
 /**
@@ -37,7 +37,7 @@ export interface ItemEntry {
  */
 export interface ParticipantEntry {
   displayName: string;
-  publicId: string;
+  participantId: string;
 }
 /**
  * ResultsMessage is sent when rankings change.
@@ -87,7 +87,7 @@ export interface ToggleResponse {
 }
 /**
  * RankedItem is one entry in the body returned by
- * GET /ballot/{id}/rankings/{publicID}.
+ * GET /ballot/{id}/rankings/{participantID}.
  */
 export interface RankedItem {
   name: string;
