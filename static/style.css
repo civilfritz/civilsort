@@ -291,17 +291,23 @@ h2 {
 }
 
 .delete-btn {
-    padding: 4px 10px;
-    background: var(--danger);
-    color: white;
+    width: 32px;
+    height: 32px;
+    padding: 0;
     border: none;
-    border-radius: 4px;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--danger);
     cursor: pointer;
-    font-size: 13px;
+    font-size: 18px;
+    line-height: 1;
 }
 
-.delete-btn:hover {
-    background: var(--danger-hover);
+@media (hover: hover) {
+    .delete-btn:hover {
+        background: var(--danger);
+        color: white;
+    }
 }
 
 /* Empty state */
@@ -368,6 +374,32 @@ h2 {
 
 .ranked-item:active {
     cursor: grabbing;
+}
+
+.item-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.move-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--primary);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--primary);
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+}
+
+@media (hover: hover) {
+    .move-btn:hover {
+        background: var(--primary);
+        color: white;
+    }
 }
 
 .drag-handle {

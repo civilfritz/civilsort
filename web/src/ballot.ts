@@ -388,6 +388,7 @@ class ParticipantPage extends LiveBallot {
         this.initDisplayName();
         this.initRankingsView();
         this.initSortable();
+        this.initMoveButtons();
         this.initDeviceLink();
         if (this.isCreator) {
             this.initToggleOpen();
@@ -509,7 +510,7 @@ class ParticipantPage extends LiveBallot {
             } else {
                 attrSpan?.remove();
             }
-            this.syncDeleteForm(metaSpan, item);
+            this.syncDeleteForm(li, item);
         }
 
         // Add new items to unranked zone
@@ -535,19 +536,20 @@ class ParticipantPage extends LiveBallot {
         li.innerHTML = `
             <span class="drag-handle">☰</span>
             <span class="item-name">${escapeHtml(item.name)}</span>
-            <span class="item-meta"></span>
+            <span class="item-meta">
+                <span class="item-actions"><button type="button" class="move-btn"></button></span>
+            </span>
         `;
 
-        const metaSpan = li.querySelector('.item-meta');
-        if (!metaSpan) return li;
-
-        if (item.addedByName) {
+        const attribution = item.addedByName;
+        if (attribution) {
             const attrSpan = document.createElement('span');
             attrSpan.className = 'item-attribution';
-            attrSpan.textContent = item.addedByName;
-            metaSpan.appendChild(attrSpan);
+            attrSpan.textContent = attribution;
+            li.querySelector('.item-meta')?.prepend(attrSpan);
         }
-        this.syncDeleteForm(metaSpan, item);
+        syncMoveButton(li, false);
+        this.syncDeleteForm(li, item);
 
         return li;
     }
@@ -559,8 +561,10 @@ class ParticipantPage extends LiveBallot {
     }
 
     // Adds or removes an item's Delete button to match canDelete.
-    private syncDeleteForm(metaSpan: Element, item: ItemEntry): void {
-        const existing = metaSpan.querySelector('.delete-form');
+    private syncDeleteForm(li: HTMLLIElement, item: ItemEntry): void {
+        const actions = li.querySelector('.item-actions');
+        if (!actions) return;
+        const existing = actions.querySelector('.delete-form');
         if (!this.canDelete(item)) {
             existing?.remove();
             return;
@@ -571,12 +575,12 @@ class ParticipantPage extends LiveBallot {
         deleteForm.method = 'POST';
         deleteForm.action = `/ballot/${this.ballotId}/items/${item.id}/delete`;
         deleteForm.className = 'delete-form';
-        deleteForm.innerHTML = '<button type="submit" class="delete-btn">Delete</button>';
-        metaSpan.appendChild(deleteForm);
+        deleteForm.innerHTML = '<button type="submit" class="delete-btn" aria-label="Delete" title="Delete">✕</button>';
+        actions.appendChild(deleteForm);
     }
 
     private updateEmptyStates(): void {
-        setEmptyState(this.rankedList, 'Drag items here to rank them');
+        setEmptyState(this.rankedList, 'Drag items here or tap + to rank them');
         setEmptyState(this.unrankedList, "Add items below - unranked items won't affect results");
     }
 
@@ -589,13 +593,36 @@ class ParticipantPage extends LiveBallot {
             ghostClass: 'sortable-ghost',
             delay: 200,
             delayOnTouchOnly: true,
-            onEnd: () => this.saveRanking(),
+            onEnd: (e) => {
+                syncMoveButton(e.item, e.to === this.rankedList);
+                this.saveRanking();
+            },
         };
 
         Sortable.create(this.rankedList, options);
         Sortable.create(this.unrankedList, options);
 
         this.updateEmptyStates();
+    }
+
+    // + appends an unranked item to the ranked list; − returns a ranked item
+    // to the top of the unranked list, so long ballots don't need dragging.
+    private initMoveButtons(): void {
+        for (const list of [this.rankedList, this.unrankedList]) {
+            list.addEventListener('click', (e) => {
+                const li = (e.target as Element | null)?.closest('.move-btn')?.closest<HTMLLIElement>('.ranked-item');
+                if (!li) return;
+                const toRanked = li.parentElement !== this.rankedList;
+                if (toRanked) {
+                    this.rankedList.appendChild(li);
+                } else {
+                    this.unrankedList.prepend(li);
+                }
+                syncMoveButton(li, toRanked);
+                this.updateEmptyStates();
+                this.saveRanking();
+            });
+        }
     }
 
     // Debounced to avoid flooding the server on rapid reorders.
@@ -947,6 +974,16 @@ class ParticipantPage extends LiveBallot {
 
 function itemId(li: HTMLElement): number {
     return parseInt(li.dataset['itemId'] ?? '', 10);
+}
+
+// Labels an item's move button for the zone it's in.
+function syncMoveButton(li: HTMLElement, ranked: boolean): void {
+    const button = li.querySelector<HTMLButtonElement>('.move-btn');
+    if (!button) return;
+    const label = ranked ? 'Unrank' : 'Add to ranked';
+    button.textContent = ranked ? '−' : '+';
+    button.setAttribute('aria-label', label);
+    button.title = label;
 }
 
 // Shows a placeholder in list when it has no items.

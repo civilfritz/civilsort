@@ -123,6 +123,7 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	rankedItems := make([]itemView, 0, len(rankings))
 	for _, ranking := range rankings { // already in position order
 		if v, ok := byID[ranking.ItemID]; ok {
+			v.Ranked = true
 			rankedItems = append(rankedItems, v)
 			delete(byID, ranking.ItemID)
 		}
@@ -186,6 +187,7 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 type itemView struct {
 	model.Item
 	CanDelete bool
+	Ranked    bool // in the requester's ranked list
 }
 
 // HandleAddItem adds a new item to the ballot.

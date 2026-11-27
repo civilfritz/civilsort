@@ -72,7 +72,7 @@ civilfritz-voting/
 1. Create a ballot from the homepage with your name and an optional title. You're its creator.
 2. Share the ballot's URL from the address bar or with **Share** in the menu (☰).
 3. Anyone with the URL sees the ballot as a **viewer**: items, live results, and who's participating. While the ballot is **Open**, viewers can **Join** by entering a name.
-4. **Participants** add items, drag them into the Ranked zone, and rename themselves. They can delete items they added until someone else ranks them.
+4. **Participants** add items, drag them into the Ranked zone (or tap **+** to add one to the bottom; **−** unranks it), and rename themselves. They can delete items they added until someone else ranks them.
 5. The Results tab shows the live Schulze ranking.
 
 ### Roles

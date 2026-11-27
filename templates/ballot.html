@@ -106,12 +106,12 @@
             {{end}}
         </ul>
         {{else}}
-        <p class="help-text">Drag items between zones. Ranked items appear in results; unranked items don't. To invite others, share this page's address.</p>
+        <p class="help-text">Drag items between zones, or use + and − to rank and unrank them. Ranked items appear in results; unranked items don't. To invite others, share this page's address.</p>
 
         <h2 class="zone-label">Ranked (top = most preferred)</h2>
         <ul id="ranked-list" class="ranking-list ranked-zone">
             {{range .RankedItems}}{{template "ballot-item" .}}{{else}}
-            <li class="empty-state">Drag items here to rank them</li>
+            <li class="empty-state">Drag items here or tap + to rank them</li>
             {{end}}
         </ul>
 
@@ -167,11 +167,15 @@
     <span class="item-name">{{.Name}}</span>
     <span class="item-meta">
         {{if .AddedByName}}<span class="item-attribution">{{.AddedByName}}</span>{{end}}
-        {{if .CanDelete}}
-        <form method="POST" action="/ballot/{{.BallotID}}/items/{{.ID}}/delete" class="delete-form">
-            <button type="submit" class="delete-btn">Delete</button>
-        </form>
-        {{end}}
+        <span class="item-actions">
+            {{if .Ranked}}<button type="button" class="move-btn" aria-label="Unrank" title="Unrank">−</button>
+            {{- else}}<button type="button" class="move-btn" aria-label="Add to ranked" title="Add to ranked">+</button>{{end}}
+            {{if .CanDelete}}
+            <form method="POST" action="/ballot/{{.BallotID}}/items/{{.ID}}/delete" class="delete-form">
+                <button type="submit" class="delete-btn" aria-label="Delete" title="Delete">✕</button>
+            </form>
+            {{end}}
+        </span>
     </span>
 </li>
 {{end}}
