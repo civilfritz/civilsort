@@ -27,7 +27,6 @@
             <div class="menu-dropdown" id="menu-dropdown">
                 <nav class="menu-nav">
                     <a href="/" class="menu-item">New Ballot</a>
-                    <button class="menu-item" id="copy-url-btn" aria-label="Copy ballot URL">Copy Link</button>
                     <button class="menu-item" id="share-url-btn" aria-label="Share ballot">Share</button>
                     {{if ne .Role "viewer"}}
                     <button class="menu-item" id="device-link-btn" data-link="{{.JoinLink}}" aria-label="Copy your personal link for using this ballot on another device">Use on another device</button>
@@ -105,7 +104,7 @@
             {{end}}
         </ul>
         {{else}}
-        <p class="help-text">Drag items between zones. Ranked items appear in results; unranked items don't. To invite others, use Copy Link or Share in the menu (☰).</p>
+        <p class="help-text">Drag items between zones. Ranked items appear in results; unranked items don't. To invite others, share this page's address.</p>
 
         <h2 class="zone-label">Ranked (top = most preferred)</h2>
         <ul id="ranked-list" class="ranking-list ranked-zone">

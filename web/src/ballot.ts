@@ -64,7 +64,7 @@ abstract class LiveBallot {
     init(): void {
         this.cachedParticipants = this.readInitialParticipants();
         this.initParticipantList();
-        this.initCopyAndShare();
+        this.initShare();
         this.connectWebSocket();
     }
 
@@ -290,12 +290,8 @@ abstract class LiveBallot {
 
     // --- Sharing ---
 
-    private initCopyAndShare(): void {
+    private initShare(): void {
         const ballotUrl = `${location.origin}/ballot/${this.ballotId}`;
-
-        const copyUrlBtn = byId('copy-url-btn', HTMLButtonElement);
-        copyUrlBtn?.addEventListener('click', () => copyWithFeedback(copyUrlBtn, ballotUrl));
-
         const shareUrlBtn = byId('share-url-btn', HTMLButtonElement);
         if (!shareUrlBtn) return;
 
