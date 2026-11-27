@@ -14,9 +14,15 @@ import (
 func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	// Check ballot access
-	// Viewers and participants alike get live updates.
+	// Viewers and participants alike get live updates. A participant's
+	// socket is tagged so it can be closed if they're removed.
 	if h.loadBallot(w, r, ballotID) == nil {
+		return
+	}
+	current, _, err := h.currentParticipant(w, r, ballotID)
+	if err != nil {
+		log.Printf("Error checking participant: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -29,7 +35,7 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := hubpkg.NewClient(conn, ballotID, h.hub)
+	client := hubpkg.NewClient(conn, ballotID, current.ID, h.hub)
 	h.hub.Register(client)
 
 	// Send current results immediately

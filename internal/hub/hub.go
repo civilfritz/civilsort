@@ -72,6 +72,31 @@ func (m *Manager) Broadcast(ballotID string, data []byte) {
 	}
 }
 
+// Disconnect closes every socket a participant has open on a ballot with the
+// given close code.
+func (m *Manager) Disconnect(ballotID, participantID string, code websocket.StatusCode) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for c := range m.ballots[ballotID] {
+		if c.participantID != "" && c.participantID == participantID {
+			c.closeCode = code
+			m.removeLocked(c)
+		}
+	}
+}
+
+// CloseBallot closes every socket on a ballot with the given close code.
+func (m *Manager) CloseBallot(ballotID string, code websocket.StatusCode) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for c := range m.ballots[ballotID] {
+		c.closeCode = code
+		m.removeLocked(c)
+	}
+}
+
 // CloseAll disconnects every client and rejects future registrations.
 func (m *Manager) CloseAll() {
 	m.mu.Lock()
@@ -116,20 +141,28 @@ func (m *Manager) removeLocked(c *Client) bool {
 
 // Client wraps a single WebSocket connection.
 type Client struct {
-	conn     *websocket.Conn
-	ballotID string
-	send     chan []byte
-	manager  *Manager
+	conn          *websocket.Conn
+	ballotID      string
+	participantID string // empty for viewers
+	send          chan []byte
+	manager       *Manager
+
+	// closeCode is the status WritePump closes the connection with. It is
+	// set under the manager's lock before send is closed, so WritePump
+	// reads it after observing the closed channel.
+	closeCode websocket.StatusCode
 }
 
-// NewClient creates a Client for a ballot. Call Manager.Register to start
-// receiving broadcasts.
-func NewClient(conn *websocket.Conn, ballotID string, manager *Manager) *Client {
+// NewClient creates a Client for a ballot; participantID is empty for a
+// viewer. Call Manager.Register to start receiving broadcasts.
+func NewClient(conn *websocket.Conn, ballotID, participantID string, manager *Manager) *Client {
 	return &Client{
-		conn:     conn,
-		ballotID: ballotID,
-		send:     make(chan []byte, sendBuffer),
-		manager:  manager,
+		conn:          conn,
+		ballotID:      ballotID,
+		participantID: participantID,
+		send:          make(chan []byte, sendBuffer),
+		manager:       manager,
+		closeCode:     websocket.StatusNormalClosure,
 	}
 }
 
@@ -143,12 +176,11 @@ func (c *Client) Send(data []byte) {
 // WritePump writes queued messages to the WebSocket until the send channel is
 // closed or ctx is done.
 func (c *Client) WritePump(ctx context.Context) {
-	defer c.conn.Close(websocket.StatusNormalClosure, "")
-
 	for {
 		select {
 		case message, ok := <-c.send:
 			if !ok {
+				c.conn.Close(c.closeCode, "")
 				return
 			}
 
@@ -158,10 +190,12 @@ func (c *Client) WritePump(ctx context.Context) {
 
 			if err != nil {
 				log.Printf("Write error: %v", err)
+				c.conn.Close(websocket.StatusInternalError, "")
 				return
 			}
 
 		case <-ctx.Done():
+			c.conn.Close(websocket.StatusNormalClosure, "")
 			return
 		}
 	}

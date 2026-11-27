@@ -3,12 +3,14 @@ import Sortable from 'sortablejs';
 import type { ServerMessage } from './messages';
 import type {
     ItemEntry,
+    LinkResponse,
     ParticipantEntry,
     RankedItem,
     ResultEntry,
     SaveRankingsRequest,
     ToggleResponse,
 } from './protocol.gen';
+import { CloseBallotDeleted, CloseNotParticipant } from './protocol.gen';
 import { assertNever, byId, errorMessage, escapeHtml, showError } from './ui';
 
 const minReconnectDelay = 1000;
@@ -43,7 +45,8 @@ export function initBallot(root: HTMLElement): void {
         console.error('Ballot page is missing required elements');
         return;
     }
-    new ParticipantPage(ballotId, participantId, rankedList, unrankedList).init();
+    const isCreator = root.dataset['role'] === 'creator';
+    new ParticipantPage(ballotId, participantId, isCreator, rankedList, unrankedList).init();
 }
 
 // LiveBallot is what every visitor sees update in real time: results, the
@@ -65,7 +68,28 @@ abstract class LiveBallot {
     }
 
     protected abstract updateItems(items: ItemEntry[], results: ResultEntry[]): void;
-    protected abstract stateChanged(isOpen: boolean): void;
+    protected abstract stateChanged(isOpen: boolean, title: string): void;
+
+    // Called when the server ends this browser's participation.
+    protected accessLost(): void {
+        location.replace(`/ballot/${this.ballotId}?${notParticipantNotice}`);
+    }
+
+    private deleted = false;
+
+    // Replaces the page once the creator deletes the ballot.
+    private ballotDeleted(): void {
+        if (this.deleted) return;
+        this.deleted = true;
+        const container = document.querySelector('.container');
+        if (container) {
+            container.innerHTML = `
+                <h1>Ballot deleted</h1>
+                <p>The creator deleted this ballot.</p>
+                <p><a href="/">Create a new ballot</a></p>
+            `;
+        }
+    }
 
     // Called after any message that may change a participant's rankings.
     protected rankingsMayHaveChanged(): void {}
@@ -91,7 +115,16 @@ abstract class LiveBallot {
             this.wsReconnectDelay = minReconnectDelay;
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
+            if (event.code === CloseBallotDeleted) {
+                this.ballotDeleted();
+                return;
+            }
+            if (event.code === CloseNotParticipant) {
+                this.accessLost();
+                return;
+            }
+            if (this.deleted) return;
             setTimeout(() => this.connectWebSocket(), this.wsReconnectDelay);
             this.wsReconnectDelay = Math.min(this.wsReconnectDelay * 2, maxReconnectDelay);
         };
@@ -114,13 +147,16 @@ abstract class LiveBallot {
                 this.rankingsMayHaveChanged();
                 break;
             case 'state_changed':
-                this.stateChanged(msg.isOpen);
+                this.stateChanged(msg.isOpen, msg.title);
                 break;
             case 'participants_changed':
                 this.updateItems(msg.items, msg.results);
                 this.updateParticipantCount(msg.participantCount);
                 this.updateParticipantList(msg.participants);
                 this.rankingsMayHaveChanged();
+                break;
+            case 'ballot_deleted':
+                this.ballotDeleted();
                 break;
             default:
                 assertNever(msg);
@@ -185,7 +221,7 @@ abstract class LiveBallot {
         list.querySelectorAll<HTMLElement>('.participant-name').forEach(li => {
             participants.push({
                 participantId: li.dataset['participantId'] ?? '',
-                displayName: li.textContent?.trim() ?? '',
+                displayName: li.dataset['name'] ?? li.textContent?.trim() ?? '',
             });
         });
 
@@ -221,7 +257,12 @@ abstract class LiveBallot {
                 const li = document.createElement('li');
                 li.className = 'participant-name';
                 li.dataset['participantId'] = p.participantId;
-                li.textContent = p.displayName;
+                li.dataset['name'] = p.displayName;
+                const label = document.createElement('span');
+                label.className = 'participant-label';
+                label.textContent = p.displayName;
+                li.appendChild(label);
+                this.decorateParticipant(li, p);
                 list.appendChild(li);
             } else {
                 anonymousCount++;
@@ -240,6 +281,9 @@ abstract class LiveBallot {
     protected canRenderParticipantList(): boolean {
         return true;
     }
+
+    // Adds per-participant controls to a list entry.
+    protected decorateParticipant(_li: HTMLLIElement, _p: ParticipantEntry): void {}
 
     // --- Sharing ---
 
@@ -308,8 +352,12 @@ class ViewerPage extends LiveBallot {
     }
 
     // Opening or closing changes whether the Join form is offered.
-    protected stateChanged(): void {
-        location.reload();
+    protected stateChanged(isOpen: boolean, title: string): void {
+        if (isOpen !== isBallotOpen()) {
+            location.reload();
+            return;
+        }
+        updateTitle(title);
     }
 }
 
@@ -327,6 +375,7 @@ class ParticipantPage extends LiveBallot {
     constructor(
         ballotId: string,
         private readonly participantId: string,
+        private readonly isCreator: boolean,
         private readonly rankedList: HTMLUListElement,
         private readonly unrankedList: HTMLUListElement,
     ) {
@@ -340,8 +389,13 @@ class ParticipantPage extends LiveBallot {
         this.initDisplayName();
         this.initRankingsView();
         this.initSortable();
-        this.initToggleOpen();
         this.initDeviceLink();
+        if (this.isCreator) {
+            this.initToggleOpen();
+            this.initCreatorMenu();
+            // Re-render the server-rendered list with the creator's controls.
+            this.updateParticipantList(this.cachedParticipants);
+        }
     }
 
     // fetch for participant-only endpoints. A 401 means this browser is no
@@ -351,7 +405,7 @@ class ParticipantPage extends LiveBallot {
     private participantFetch(input: string, init?: RequestInit): Promise<Response> {
         return fetch(input, init).then(response => {
             if (response.status === 401) {
-                location.replace(`/ballot/${this.ballotId}?${notParticipantNotice}`);
+                this.accessLost();
                 return new Promise<Response>(() => {});
             }
             return response;
@@ -494,8 +548,8 @@ class ParticipantPage extends LiveBallot {
             metaSpan.appendChild(attrSpan);
         }
 
-        // Add delete button if this participant added it
-        if (item.addedBy === this.participantId) {
+        // Add delete button on own items, or on all items for the creator
+        if (this.isCreator || item.addedBy === this.participantId) {
             const deleteForm = document.createElement('form');
             deleteForm.method = 'POST';
             deleteForm.action = `/ballot/${this.ballotId}/items/${item.id}/delete`;
@@ -608,10 +662,19 @@ class ParticipantPage extends LiveBallot {
 
     private initRankingsView(): void {
         this.participantList?.addEventListener('click', (e) => {
-            const target = (e.target as Element | null)?.closest<HTMLElement>('.participant-name');
+            const clicked = e.target as Element | null;
+            const target = clicked?.closest<HTMLElement>('.participant-name');
             const id = target?.dataset['participantId'];
             if (!target || !id) return;
-            this.showParticipantRankings({ id, name: target.textContent ?? '' });
+            const name = target.dataset['name'] ?? '';
+
+            const action = clicked?.closest<HTMLButtonElement>('.participant-action');
+            if (action) {
+                e.stopPropagation();
+                this.participantAction(action, id, name);
+                return;
+            }
+            this.showParticipantRankings({ id, name });
         });
     }
 
@@ -687,10 +750,103 @@ class ParticipantPage extends LiveBallot {
             });
     }
 
-    // --- Ballot access ---
+    // --- Ballot settings ---
 
-    protected stateChanged(isOpen: boolean): void {
+    protected stateChanged(isOpen: boolean, title: string): void {
         updateToggleUI(isOpen);
+        updateTitle(title);
+    }
+
+    // --- Creator controls ---
+
+    private initCreatorMenu(): void {
+        byId('edit-title-btn', HTMLButtonElement)?.addEventListener('click', () => {
+            const current = document.querySelector('.ballot-header h1')?.textContent ?? '';
+            const title = prompt('Ballot title', current === 'Ballot' ? '' : current);
+            if (title === null) return;
+            this.creatorPost('title', new URLSearchParams({ title }));
+        });
+
+        byId('delete-ballot-btn', HTMLButtonElement)?.addEventListener('click', () => {
+            if (confirm('Delete this ballot for everyone? This cannot be undone.')) {
+                this.creatorPost('delete');
+            }
+        });
+    }
+
+    protected override decorateParticipant(li: HTMLLIElement, p: ParticipantEntry): void {
+        if (!this.isCreator || p.participantId === this.participantId) return;
+        for (const [action, label] of [['link', 'Copy link'], ['reset', 'Reset link'], ['remove', 'Remove']] as const) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = action === 'remove' ? 'participant-action danger' : 'participant-action';
+            button.dataset['action'] = action;
+            button.textContent = label;
+            li.appendChild(button);
+        }
+    }
+
+    private participantAction(button: HTMLButtonElement, id: string, name: string): void {
+        const base = `/ballot/${this.ballotId}/participants/${encodeURIComponent(id)}`;
+        switch (button.dataset['action']) {
+            case 'link':
+                this.fetchLink(base + '/link', { method: 'GET' }, button);
+                break;
+            case 'reset':
+                if (confirm(`Reset ${name}'s link? Their current link and signed-in devices stop working; the new link is copied for you to send them.`)) {
+                    this.fetchLink(base + '/reset', { method: 'POST' }, button);
+                }
+                break;
+            case 'remove':
+                this.confirmRemove(base + '/remove', name);
+                break;
+        }
+    }
+
+    // Fetches a participant's join link and copies it.
+    private fetchLink(url: string, init: RequestInit, button: HTMLButtonElement): void {
+        this.participantFetch(url, init)
+            .then(async response => {
+                if (!response.ok) throw new Error((await response.text()) || 'Failed to get link');
+                return response.json() as Promise<LinkResponse>;
+            })
+            .then(({ link }) => copyWithFeedback(button, location.origin + link))
+            .catch((err: unknown) => showError(errorMessage(err)));
+    }
+
+    private confirmRemove(url: string, name: string): void {
+        const dialog = byId('remove-dialog', HTMLDialogElement);
+        const form = dialog?.querySelector('form');
+        if (!dialog || !form) return;
+
+        const nameEl = byId('remove-name', HTMLElement);
+        if (nameEl) nameEl.textContent = name;
+        const note = byId('remove-note', HTMLElement);
+        if (note) {
+            note.textContent = isBallotOpen()
+                ? 'The ballot is open, so they could rejoin as a new participant. Close it first to prevent that.'
+                : "The ballot is closed, so they can't rejoin.";
+        }
+        form.reset();
+
+        dialog.addEventListener('close', () => {
+            if (dialog.returnValue !== 'remove') return;
+            const body = new URLSearchParams();
+            for (const box of form.querySelectorAll<HTMLInputElement>('input[type=checkbox]:checked')) {
+                body.set(box.name, box.value);
+            }
+            this.creatorPost('remove', body, url);
+        }, { once: true });
+        dialog.showModal();
+    }
+
+    // POSTs a creator action; results arrive over the WebSocket.
+    private creatorPost(action: string, body?: URLSearchParams, url = `/ballot/${this.ballotId}/${action}`): void {
+        this.participantFetch(url, { method: 'POST', ...(body ? { body } : {}) })
+            .then(async response => {
+                if (!response.ok) throw new Error((await response.text()) || `Failed to ${action}`);
+            })
+            .catch((err: unknown) => showError(errorMessage(err)));
     }
 
     private initToggleOpen(): void {
@@ -728,13 +884,26 @@ function setEmptyState(list: HTMLUListElement, text: string): void {
     list.appendChild(emptyLi);
 }
 
+// Updates the creator's Open/Closed button or everyone else's status label.
 function updateToggleUI(isOpen: boolean): void {
-    const btn = byId('toggle-open-btn', HTMLButtonElement);
-    if (!btn) return;
+    for (const el of [byId('toggle-open-btn', HTMLElement), byId('ballot-status', HTMLElement)]) {
+        if (!el) continue;
+        el.textContent = isOpen ? 'Open' : 'Closed';
+        el.classList.toggle('toggle-open', isOpen);
+        el.classList.toggle('toggle-closed', !isOpen);
+    }
+}
 
-    btn.textContent = isOpen ? 'Open' : 'Closed';
-    btn.classList.toggle('toggle-open', isOpen);
-    btn.classList.toggle('toggle-closed', !isOpen);
+function isBallotOpen(): boolean {
+    const el = byId('toggle-open-btn', HTMLElement) ?? byId('ballot-status', HTMLElement);
+    return el?.classList.contains('toggle-open') ?? false;
+}
+
+function updateTitle(title: string): void {
+    const shown = title || 'Ballot';
+    const h1 = document.querySelector('.ballot-header h1');
+    if (h1) h1.textContent = shown;
+    document.title = `${shown} - civilsort`;
 }
 
 // Copies text to the clipboard and briefly confirms on button.

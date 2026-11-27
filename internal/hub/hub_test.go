@@ -8,7 +8,7 @@ import (
 )
 
 func newTestClient(m *Manager, ballotID string) *Client {
-	return NewClient(nil, ballotID, m)
+	return NewClient(nil, ballotID, "", m)
 }
 
 // drained reports whether c's send channel is closed, after reading any
@@ -141,5 +141,56 @@ func TestConcurrentRegisterUnregisterBroadcast(t *testing.T) {
 
 	if len(m.ballots) != 0 {
 		t.Errorf("%d ballots left registered, want 0", len(m.ballots))
+	}
+}
+
+func TestDisconnect_OnlyThatParticipant(t *testing.T) {
+	m := NewManager()
+	defer m.CloseAll()
+
+	alice1 := NewClient(nil, "a", "alice", m)
+	alice2 := NewClient(nil, "a", "alice", m)
+	bob := NewClient(nil, "a", "bob", m)
+	viewer := newTestClient(m, "a")
+	elsewhere := NewClient(nil, "b", "alice", m)
+	for _, c := range []*Client{alice1, alice2, bob, viewer, elsewhere} {
+		m.Register(c)
+	}
+
+	m.Disconnect("a", "alice", 4001)
+
+	for name, c := range map[string]*Client{"alice1": alice1, "alice2": alice2} {
+		if !drained(c) || c.closeCode != 4001 {
+			t.Errorf("%s: closed=%v code=%d, want closed with 4001", name, drained(c), c.closeCode)
+		}
+	}
+	for name, c := range map[string]*Client{"bob": bob, "viewer": viewer, "same ID on another ballot": elsewhere} {
+		if drained(c) {
+			t.Errorf("%s should stay connected", name)
+		}
+	}
+}
+
+func TestCloseBallot(t *testing.T) {
+	m := NewManager()
+	defer m.CloseAll()
+
+	a := NewClient(nil, "a", "alice", m)
+	viewer := newTestClient(m, "a")
+	other := newTestClient(m, "b")
+	for _, c := range []*Client{a, viewer, other} {
+		m.Register(c)
+	}
+
+	m.CloseBallot("a", 4002)
+
+	if !drained(a) || !drained(viewer) || a.closeCode != 4002 || viewer.closeCode != 4002 {
+		t.Error("every socket on the ballot should close with 4002")
+	}
+	if drained(other) {
+		t.Error("other ballots should be unaffected")
+	}
+	if _, ok := m.ballots["a"]; ok {
+		t.Error("closed ballot should be removed")
 	}
 }

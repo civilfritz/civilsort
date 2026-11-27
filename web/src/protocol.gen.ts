@@ -16,6 +16,15 @@ export const TypeResults: MessageType = "results";
 export const TypeItemsChanged: MessageType = "items_changed";
 export const TypeStateChanged: MessageType = "state_changed";
 export const TypeParticipantsChanged: MessageType = "participants_changed";
+export const TypeBallotDeleted: MessageType = "ballot_deleted";
+/**
+ * CloseNotParticipant: the participant was removed or their link reset.
+ */
+export const CloseNotParticipant = 4001;
+/**
+ * CloseBallotDeleted: the creator deleted the ballot.
+ */
+export const CloseBallotDeleted = 4002;
 /**
  * ResultEntry is one item in the computed Schulze ranking.
  */
@@ -57,11 +66,18 @@ export interface ItemsChangedMessage {
   participantCount: number /* int */;
 }
 /**
- * StateChangedMessage is sent when the ballot is opened or closed.
+ * StateChangedMessage is sent when the creator changes ballot settings.
  */
 export interface StateChangedMessage {
   type: "state_changed";
   isOpen: boolean;
+  title: string;
+}
+/**
+ * BallotDeletedMessage is sent when the creator deletes the ballot.
+ */
+export interface BallotDeletedMessage {
+  type: "ballot_deleted";
 }
 /**
  * ParticipantsChangedMessage is sent when participants join or rename.
@@ -84,6 +100,13 @@ export interface SaveRankingsRequest {
  */
 export interface ToggleResponse {
   isOpen: boolean;
+}
+/**
+ * LinkResponse is the body returned by the participant link endpoints: a
+ * path that signs a browser in as that participant.
+ */
+export interface LinkResponse {
+  link: string;
 }
 /**
  * RankedItem is one entry in the body returned by

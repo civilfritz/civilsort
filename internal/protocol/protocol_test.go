@@ -23,8 +23,13 @@ func TestMessagesEncode(t *testing.T) {
 		},
 		{
 			name: "state_changed",
-			msg:  NewStateChangedMessage(true),
-			want: `{"type":"state_changed","isOpen":true}`,
+			msg:  NewStateChangedMessage(true, "Lunch"),
+			want: `{"type":"state_changed","isOpen":true,"title":"Lunch"}`,
+		},
+		{
+			name: "ballot_deleted",
+			msg:  NewBallotDeletedMessage(),
+			want: `{"type":"ballot_deleted"}`,
 		},
 		{
 			name: "participants_changed",

@@ -115,7 +115,9 @@ func (h *Handler) HandleBallot(w http.ResponseWriter, r *http.Request) {
 	}
 	byID := make(map[int64]itemView, len(items))
 	for _, item := range items {
-		byID[item.ID] = itemView{Item: item, CanDelete: isParticipant && item.AddedBy == current.ID}
+		// Shown on own items and, for the creator, on all; the server also
+		// refuses non-creators once someone else has ranked the item.
+		byID[item.ID] = itemView{Item: item, CanDelete: current.IsCreator || (isParticipant && item.AddedBy == current.ID)}
 	}
 	rankedItems := make([]itemView, 0, len(rankings))
 	for _, ranking := range rankings { // already in position order
@@ -219,7 +221,7 @@ func (h *Handler) HandleAddItem(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// HandleDeleteItem deletes an item (only if the current participant added it).
+// HandleDeleteItem deletes an item.
 func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
@@ -244,9 +246,26 @@ func (h *Handler) HandleDeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if addedBy != current.ID {
-		http.Error(w, "You can only delete items you added", http.StatusForbidden)
-		return
+	// The creator can delete anything. Others can delete their own items
+	// until another participant has ranked them.
+	if !current.IsCreator {
+		if addedBy != current.ID {
+			http.Error(w, "You can only delete items you added", http.StatusForbidden)
+			return
+		}
+		var rankedByOthers bool
+		err = h.db.QueryRowContext(r.Context(),
+			"SELECT EXISTS(SELECT 1 FROM rankings WHERE item_id = ? AND participant_id != ?)",
+			itemID, current.ID).Scan(&rankedByOthers)
+		if err != nil {
+			log.Printf("Error checking item rankings: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if rankedByOthers {
+			http.Error(w, "Someone else has ranked this item. Ask the ballot's creator to delete it.", http.StatusForbidden)
+			return
+		}
 	}
 
 	_, err = h.db.ExecContext(r.Context(), "DELETE FROM items WHERE id = ?", itemID)
@@ -341,7 +360,8 @@ func (h *Handler) HandleSaveRankings(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 	ballotID := r.PathValue("id")
 
-	if _, _, ok := h.requireParticipant(w, r, ballotID); !ok {
+	ballot, _, ok := h.requireCreator(w, r, ballotID)
+	if !ok {
 		return
 	}
 
@@ -358,7 +378,7 @@ func (h *Handler) HandleToggleOpen(w http.ResponseWriter, r *http.Request) {
 	newIsOpen := newIsOpenInt == 1
 
 	// Broadcast state change via WebSocket
-	h.broadcastStateChange(ballotID, newIsOpen)
+	h.broadcastStateChange(ballotID, newIsOpen, ballot.Title)
 
 	// Return JSON with the new state
 	writeJSON(w, protocol.ToggleResponse{IsOpen: newIsOpen})
@@ -636,9 +656,9 @@ func (h *Handler) broadcastParticipantsChanged(ctx context.Context, ballotID str
 	h.send(ballotID, protocol.NewParticipantsChangedMessage(s.results, s.items, s.participants))
 }
 
-// broadcastStateChange broadcasts a ballot open/closed state change.
-func (h *Handler) broadcastStateChange(ballotID string, isOpen bool) {
-	h.send(ballotID, protocol.NewStateChangedMessage(isOpen))
+// broadcastStateChange broadcasts the ballot's creator-controlled settings.
+func (h *Handler) broadcastStateChange(ballotID string, isOpen bool, title string) {
+	h.send(ballotID, protocol.NewStateChangedMessage(isOpen, title))
 }
 
 // send marshals msg and broadcasts it to all WebSocket clients on a ballot.

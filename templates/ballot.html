@@ -20,12 +20,12 @@
 <main id="ballot" data-ballot-id="{{.Ballot.ID}}" data-role="{{.Role}}" data-current-participant-id="{{.CurrentParticipantID}}">
 <div class="container ballot">
     <div class="ballot-header">
-        {{if eq .Role "viewer"}}
-        <span id="ballot-status" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}">{{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}</span>
-        {{else}}
-        <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}" aria-label="Toggle ballot access - controls whether new participants can join">
+        {{if eq .Role "creator"}}
+        <button type="button" id="toggle-open-btn" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}" aria-label="Toggle whether new participants can join">
             {{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}
         </button>
+        {{else}}
+        <span id="ballot-status" class="toggle-btn {{if .Ballot.IsOpen}}toggle-open{{else}}toggle-closed{{end}}" title="Whether new participants can join">{{if .Ballot.IsOpen}}Open{{else}}Closed{{end}}</span>
         {{end}}
         <h1>{{if .Ballot.Title}}{{.Ballot.Title}}{{else}}Ballot{{end}}</h1>
         <div class="menu-wrapper" id="menu-wrapper">
@@ -37,6 +37,10 @@
                     <button class="menu-item" id="share-url-btn" aria-label="Share ballot">Share</button>
                     {{if ne .Role "viewer"}}
                     <button class="menu-item" id="device-link-btn" data-link="{{.JoinLink}}" aria-label="Copy your personal link for using this ballot on another device">Use on another device</button>
+                    {{end}}
+                    {{if eq .Role "creator"}}
+                    <button class="menu-item" id="edit-title-btn">Edit title</button>
+                    <button class="menu-item menu-item-danger" id="delete-ballot-btn">Delete ballot</button>
                     {{end}}
                     <button class="menu-item theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">Light/Dark</button>
                     <a href="/about?from={{.Ballot.ID}}" class="menu-item">About</a>
@@ -76,7 +80,7 @@
         <ul class="participant-list" id="participant-list" style="display:none;">
             {{range .Participants}}
                 {{if .DisplayName}}
-                    <li class="participant-name" data-participant-id="{{.ID}}">{{.DisplayName}}</li>
+                    <li class="participant-name" data-participant-id="{{.ID}}" data-name="{{.DisplayName}}">{{.DisplayName}}</li>
                 {{end}}
             {{end}}
             {{if gt .AnonymousCount 0}}
@@ -139,6 +143,20 @@
         </ul>
     </div>
 </div>
+{{if eq .Role "creator"}}
+<dialog id="remove-dialog" class="remove-dialog">
+    <form method="dialog">
+        <p>Remove <strong id="remove-name"></strong> from this ballot? Their link will stop working.</p>
+        <label><input type="checkbox" name="rankings" value="1"> Also delete their rankings</label>
+        <label><input type="checkbox" name="items" value="1"> Also delete the items they added</label>
+        <p class="help-text" id="remove-note"></p>
+        <div class="dialog-buttons">
+            <button value="cancel" formnovalidate>Cancel</button>
+            <button value="remove" class="danger">Remove</button>
+        </div>
+    </form>
+</dialog>
+{{end}}
 </main>
 
 <script src="/static/app.js"></script>

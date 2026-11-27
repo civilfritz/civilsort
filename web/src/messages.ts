@@ -1,4 +1,5 @@
 import type {
+    BallotDeletedMessage,
     ItemsChangedMessage,
     ParticipantsChangedMessage,
     ResultsMessage,
@@ -10,4 +11,5 @@ export type ServerMessage =
     | ResultsMessage
     | ItemsChangedMessage
     | StateChangedMessage
-    | ParticipantsChangedMessage;
+    | ParticipantsChangedMessage
+    | BallotDeletedMessage;

@@ -13,6 +13,16 @@ const (
 	TypeItemsChanged        MessageType = "items_changed"
 	TypeStateChanged        MessageType = "state_changed"
 	TypeParticipantsChanged MessageType = "participants_changed"
+	TypeBallotDeleted       MessageType = "ballot_deleted"
+)
+
+// WebSocket close codes the server uses to end a session for good; the
+// browser doesn't reconnect after these.
+const (
+	// CloseNotParticipant: the participant was removed or their link reset.
+	CloseNotParticipant = 4001
+	// CloseBallotDeleted: the creator deleted the ballot.
+	CloseBallotDeleted = 4002
 )
 
 // ResultEntry is one item in the computed Schulze ranking.
@@ -53,10 +63,16 @@ type ItemsChangedMessage struct {
 	ParticipantCount int           `json:"participantCount"`
 }
 
-// StateChangedMessage is sent when the ballot is opened or closed.
+// StateChangedMessage is sent when the creator changes ballot settings.
 type StateChangedMessage struct {
 	Type   MessageType `json:"type" tstype:"\"state_changed\""`
 	IsOpen bool        `json:"isOpen"`
+	Title  string      `json:"title"`
+}
+
+// BallotDeletedMessage is sent when the creator deletes the ballot.
+type BallotDeletedMessage struct {
+	Type MessageType `json:"type" tstype:"\"ballot_deleted\""`
 }
 
 // ParticipantsChangedMessage is sent when participants join or rename.
@@ -76,6 +92,12 @@ type SaveRankingsRequest struct {
 // ToggleResponse is the body returned by POST /ballot/{id}/toggle.
 type ToggleResponse struct {
 	IsOpen bool `json:"isOpen"`
+}
+
+// LinkResponse is the body returned by the participant link endpoints: a
+// path that signs a browser in as that participant.
+type LinkResponse struct {
+	Link string `json:"link"`
 }
 
 // RankedItem is one entry in the body returned by
@@ -101,8 +123,12 @@ func NewItemsChangedMessage(results []ResultEntry, items []ItemEntry, participan
 	}
 }
 
-func NewStateChangedMessage(isOpen bool) StateChangedMessage {
-	return StateChangedMessage{Type: TypeStateChanged, IsOpen: isOpen}
+func NewStateChangedMessage(isOpen bool, title string) StateChangedMessage {
+	return StateChangedMessage{Type: TypeStateChanged, IsOpen: isOpen, Title: title}
+}
+
+func NewBallotDeletedMessage() BallotDeletedMessage {
+	return BallotDeletedMessage{Type: TypeBallotDeleted}
 }
 
 func NewParticipantsChangedMessage(results []ResultEntry, items []ItemEntry, participants []ParticipantEntry) ParticipantsChangedMessage {
