@@ -11,7 +11,7 @@ import type {
     ToggleResponse,
 } from './protocol.gen';
 import { CloseBallotDeleted, CloseNotParticipant } from './protocol.gen';
-import { assertNever, byId, errorMessage, escapeHtml, showError } from './ui';
+import { assertNever, byId, errorMessage, escapeHtml, showError, showToast } from './ui';
 
 const minReconnectDelay = 1000;
 const maxReconnectDelay = 30000;
@@ -668,7 +668,11 @@ class ParticipantPage extends LiveBallot {
         const button = byId('device-link-btn', HTMLButtonElement);
         const link = button?.dataset['link'];
         if (button && link) {
-            button.addEventListener('click', () => copyWithFeedback(button, location.origin + link));
+            button.addEventListener('click', () => {
+                navigator.clipboard.writeText(location.origin + link)
+                    .then(() => showToast('Link copied. Open it on your other device.', 'success'))
+                    .catch(() => showError('Failed to copy. Please try again.'));
+            });
         }
     }
 

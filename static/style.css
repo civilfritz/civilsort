@@ -674,12 +674,11 @@ h2 {
     font-style: italic;
 }
 
-/* Error toast notification */
-.error-toast {
+/* Toast notifications */
+.toast {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background: var(--danger);
     color: white;
     padding: 12px 20px;
     border-radius: 4px;
@@ -688,7 +687,15 @@ h2 {
     animation: slideIn 0.3s ease;
 }
 
-.error-toast.fade-out {
+.toast-error {
+    background: var(--danger);
+}
+
+.toast-success {
+    background: var(--success);
+}
+
+.toast.fade-out {
     animation: fadeOut 0.3s ease;
 }
 
@@ -740,7 +747,7 @@ input:focus-visible,
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
     .slideDown,
-    .error-toast,
+    .toast,
     @keyframes slideIn,
     @keyframes fadeOut {
         animation: none;

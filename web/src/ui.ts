@@ -11,9 +11,9 @@ export function escapeHtml(text: string): string {
 }
 
 // Shows a toast notification that fades out after three seconds.
-export function showError(message: string): void {
+export function showToast(message: string, kind: 'error' | 'success'): void {
     const toast = document.createElement('div');
-    toast.className = 'error-toast';
+    toast.className = `toast toast-${kind}`;
     toast.textContent = message;
     document.body.appendChild(toast);
 
@@ -21,6 +21,10 @@ export function showError(message: string): void {
         toast.classList.add('fade-out');
         setTimeout(() => toast.remove(), 300);
     }, 3000);
+}
+
+export function showError(message: string): void {
+    showToast(message, 'error');
 }
 
 export function errorMessage(err: unknown): string {

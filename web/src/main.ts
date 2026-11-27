@@ -34,12 +34,12 @@ function initMenu(): void {
         }
     });
 
-    // Don't close menu when clicking theme toggle, share, or link buttons
-    for (const selector of ['.theme-toggle', '#share-url-btn', '#device-link-btn']) {
-        menuDropdown.querySelector(selector)?.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
-    }
+    // Close menu once an item is chosen; the item's own handler runs first.
+    menuDropdown.addEventListener('click', (e) => {
+        if ((e.target as Element | null)?.closest('.menu-item')) {
+            menuDropdown.classList.remove('open');
+        }
+    });
 }
 
 function initTabs(): void {
